@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Klantkaart</title>
+  <meta name="description" content="Klantkaart, bezoekplanning en pipeline voor Scentlinq Pro Benelux">
+  <meta name="theme-color" content="#1f5f5b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/vandaag"><img src="icons/icon.svg" alt="" width="28" height="28"> Klantkaart</a>
+    <button id="syncBtn" class="sync-chip" type="button" hidden></button>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <nav class="tabbar" aria-label="Hoofdmenu">
+    <a href="#/vandaag" data-tab="vandaag"><span aria-hidden="true">☀️</span>Vandaag</a>
+    <a href="#/klanten" data-tab="klanten"><span aria-hidden="true">👥</span>Klanten</a>
+    <a href="#/pipeline" data-tab="pipeline"><span aria-hidden="true">📊</span>Pipeline</a>
+    <a href="#/planning" data-tab="planning"><span aria-hidden="true">🗺️</span>Planning</a>
+    <a href="#/meer" data-tab="meer"><span aria-hidden="true">⚙️</span>Meer</a>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="dialog"></dialog>
+
+  <script src="vendor/xlsx.full.min.js" defer></script>
+  <script src="vendor/MicrosoftTeams.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

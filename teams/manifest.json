@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "db8882ff-d2a6-48b9-8c1f-eececbb629f7",
+  "developer": {
+    "name": "Scentlinq Pro Benelux BV",
+    "websiteUrl": "https://scentlinqnl-png.github.io/crm/",
+    "privacyUrl": "https://scentlinqnl-png.github.io/crm/",
+    "termsOfUseUrl": "https://scentlinqnl-png.github.io/crm/"
+  },
+  "name": { "short": "Klantkaart", "full": "Scentlinq Klantkaart" },
+  "description": {
+    "short": "Klantkaart, planning, pipeline en navulbeheer",
+    "full": "Klantkaart voor Scentlinq Pro Benelux: klanten, bezoeken en verbruik uit Klantkaart.xlsx, dagplanning, sales-pipeline, activiteiten en voorspellend navulbeheer."
+  },
+  "icons": { "color": "color.png", "outline": "outline.png" },
+  "accentColor": "#1F5F5B",
+  "staticTabs": [
+    {
+      "entityId": "klantkaart",
+      "name": "Klantkaart",
+      "contentUrl": "https://scentlinqnl-png.github.io/crm/#/vandaag",
+      "websiteUrl": "https://scentlinqnl-png.github.io/crm/",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": ["identity"],
+  "validDomains": ["scentlinqnl-png.github.io", "login.microsoftonline.com"]
+}
