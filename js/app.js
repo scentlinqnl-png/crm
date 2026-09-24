@@ -138,6 +138,26 @@ async function runSync({ quiet = false } = {}) {
   }
 }
 
+// ---------- thema (per apparaat onthouden) ----------
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const btn = $('#themeBtn');
+  if (btn) {
+    btn.textContent = theme === 'light' ? '🌙' : '☀️';
+    btn.setAttribute('aria-label', theme === 'light' ? 'Donker thema' : 'Licht thema');
+  }
+  $('meta[name=theme-color]')?.setAttribute('content', theme === 'light' ? '#f4f4f3' : '#0d0d0f');
+}
+let theme = 'dark';
+try { theme = localStorage.getItem('klantkaart.theme') || 'dark'; } catch {}
+applyTheme(theme);
+$('#themeBtn')?.addEventListener('click', () => {
+  theme = theme === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem('klantkaart.theme', theme); } catch {}
+  applyTheme(theme);
+});
+
 $('#syncBtn').addEventListener('click', () => {
   if (m365.isSignedIn()) runSync();
   else location.hash = '#/meer';

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Klantkaart</title>
   <meta name="description" content="Klantkaart, bezoekplanning en pipeline voor Scentlinq Pro Benelux">
-  <meta name="theme-color" content="#1f5f5b">
+  <meta name="theme-color" content="#0d0d0f">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -16,7 +16,10 @@
 <body>
   <header class="topbar">
     <a class="brand" href="#/vandaag"><img src="icons/icon.svg" alt="" width="28" height="28"> Klantkaart</a>
+  <div class="top-actions">
+    <button id="themeBtn" class="theme-btn" type="button" aria-label="Wissel licht/donker">☀️</button>
     <button id="syncBtn" class="sync-chip" type="button" hidden></button>
+  </div>
   </header>
 
   <main id="view" tabindex="-1"></main>

@@ -15,7 +15,7 @@
     "full": "Klantkaart voor Scentlinq Pro Benelux: klanten, bezoeken en verbruik uit Klantkaart.xlsx, dagplanning, sales-pipeline, activiteiten en voorspellend navulbeheer."
   },
   "icons": { "color": "color.png", "outline": "outline.png" },
-  "accentColor": "#1F5F5B",
+  "accentColor": "#17171A",
   "staticTabs": [
     {
       "entityId": "klantkaart",
