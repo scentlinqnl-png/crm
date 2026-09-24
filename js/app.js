@@ -7,6 +7,7 @@ import { planDay, mapsRouteUrl } from './planner.js';
 import * as m365 from './graph.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow } from './excel.js';
 import { geocodePlaces, missingPlaces } from './geo.js';
+import { loadDemo } from './demo.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -78,6 +79,28 @@ function openDialog(html, onSubmit) {
   });
   dialog.showModal();
   return form;
+}
+
+// Bevestiging in de app zelf (window.confirm werkt niet in Teams-tabs en ingesloten weergaven).
+function ask(message, okLabel = 'Doorgaan') {
+  return new Promise((resolve) => {
+    openDialog(`
+      <p>${h(message)}</p>
+      <div class="actions">
+        <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
+        <button value="ok" class="btn primary">${h(okLabel)}</button>
+      </div>`, () => resolve(true));
+    dialog.addEventListener('close', () => resolve(false), { once: true });
+  });
+}
+
+function startDemo() {
+  loadDemo();
+  const today = todayISO();
+  const plan = planDay({ datum: today });
+  store.update((s) => { s.plans[today] = plan; });
+  toast('Voorbeeldgegevens geladen (fictieve klanten)');
+  render();
 }
 
 // ---------- synchronisatie ----------
@@ -245,7 +268,10 @@ function emptyState() {
     <section class="card empty">
       <h2>Nog geen klanten geladen</h2>
       <p>Koppel Microsoft 365 om Klantkaart.xlsx rechtstreeks uit SharePoint te gebruiken, of importeer het bestand eenmalig.</p>
-      <a class="btn primary" href="#/meer">Naar instellingen</a>
+      <div class="actions" style="justify-content:center">
+        <a class="btn primary" href="#/meer">Naar instellingen</a>
+        <button class="btn" type="button" data-demo>Bekijk met voorbeeldgegevens</button>
+      </div>
     </section>`;
 }
 
@@ -749,8 +775,8 @@ viewPlanning.after = (params) => {
     render();
     runSync({ quiet: true });
   });
-  $('#delPlan')?.addEventListener('click', () => {
-    if (!confirm('Deze dagplanning wissen?')) return;
+  $('#delPlan')?.addEventListener('click', async () => {
+    if (!(await ask('Deze dagplanning wissen?', 'Wissen'))) return;
     const d = dateEl.value;
     store.update((st) => {
       delete st.plans[d];
@@ -857,8 +883,8 @@ viewDag.after = () => {
       toast('Kopiëren niet toegestaan; selecteer de tekst handmatig');
     }
   });
-  $('#markDone')?.addEventListener('click', () => {
-    if (!confirm('Zijn deze regels in Klantkaart.xlsx geplakt? Ze worden dan niet meer als wachtend getoond.')) return;
+  $('#markDone')?.addEventListener('click', async () => {
+    if (!(await ask('Zijn deze regels in Klantkaart.xlsx geplakt? Ze worden dan niet meer als wachtend getoond.', 'Ja, geplakt'))) return;
     store.update((s) => s.visits.filter((v) => v.pending).forEach((v) => { v.pending = false; }));
     render();
   });
@@ -876,10 +902,11 @@ function viewMeer() {
     <h1>Meer</h1>
     <section class="card">
       <h2>Gegevens</h2>
-      <p>${s.customers.length} klanten · ${s.visits.length} bezoeken · ${openDeals().length} open deals${s.lastSync ? `<br><span class="muted small">Laatst bijgewerkt ${new Date(s.lastSync).toLocaleString('nl-NL')} (${s.source === 'm365' ? 'Microsoft 365' : 'import'})</span>` : ''}</p>
+      <p>${s.customers.length} klanten · ${s.visits.length} bezoeken · ${openDeals().length} open deals${s.lastSync ? `<br><span class="muted small">Laatst bijgewerkt ${new Date(s.lastSync).toLocaleString('nl-NL')} (${s.source === 'm365' ? 'Microsoft 365' : s.source === 'demo' ? 'voorbeeldgegevens' : 'import'})</span>` : ''}</p>
       <div class="actions left">
         <label class="btn">📂 Klantkaart.xlsx importeren<input type="file" id="importFile" accept=".xlsx,.xlsm" hidden></label>
         <button class="btn" id="backup">⬇️ Back-up (.xlsx)</button>
+        ${s.customers.length ? '' : '<button class="btn" id="demoBtn">Voorbeeldgegevens</button>'}
       </div>
     </section>
 
@@ -1004,9 +1031,10 @@ viewMeer.after = async () => {
     render();
   });
   $('#install')?.addEventListener('click', async () => { await installPrompt.prompt(); installPrompt = null; render(); });
-  $('#reset').addEventListener('click', () => {
-    if (confirm('Alle lokale gegevens (inclusief niet-gesynchroniseerde bezoeken) wissen?')) { store.reset(); m365.signOut(); render(); }
+  $('#reset').addEventListener('click', async () => {
+    if (await ask('Alle lokale gegevens (inclusief niet-gesynchroniseerde bezoeken) wissen?', 'Wissen')) { store.reset(); m365.signOut(); render(); }
   });
+  $('#demoBtn')?.addEventListener('click', startDemo);
   if (m365.isSignedIn() && navigator.onLine) {
     try {
       const u = await m365.me();
@@ -1169,6 +1197,7 @@ function render() {
   const scrollY = lastRoute === location.hash ? window.scrollY : 0;
   view.innerHTML = fn(arg);
   fn.after?.(arg);
+  $$('[data-demo]', view).forEach((b) => b.addEventListener('click', startDemo));
   $$('.tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
   renderSyncChip();
   if (lastRoute !== location.hash) view.focus({ preventScroll: true });
@@ -1177,6 +1206,7 @@ function render() {
 }
 
 window.addEventListener('hashchange', render);
+if (window.KLANTKAART_DEMO && !store.get().customers.length) startDemo();
 render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

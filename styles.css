@@ -16,11 +16,15 @@
   --radius: 14px;
   --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 16px rgb(0 0 0 / 5%);
   --tabbar-h: 64px;
+  --k-weinig-bg: #fde2e0; --k-weinig-ink: #8a1c14;
+  --k-normaal-bg: #dcf1e4; --k-normaal-ink: #145a32;
+  --k-veel-bg: #e1ecfb; --k-veel-ink: #174a8b;
+  --deal-bg: #f5ecd6; --deal-ink: #6d5212;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0f1514;
     --surface: #172120;
     --surface-2: #1f2c2a;
@@ -33,8 +37,31 @@
     --warn-bg: #3a300f;
     --warn-ink: #f3d27a;
     --shadow: none;
+    --k-weinig-bg: #4a1f1c; --k-weinig-ink: #ffb4ab;
+    --k-normaal-bg: #173826; --k-normaal-ink: #9fe0b5;
+    --k-veel-bg: #1b2e4a; --k-veel-ink: #a9c8f5;
+    --deal-bg: #3b3017; --deal-ink: #efd08a;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+    --bg: #0f1514;
+    --surface: #172120;
+    --surface-2: #1f2c2a;
+    --text: #e6eeec;
+    --muted: #97a8a4;
+    --line: #2a3a37;
+    --brand: #4fb3aa;
+    --brand-2: #6fcac1;
+    --brand-ink: #06201e;
+    --warn-bg: #3a300f;
+    --warn-ink: #f3d27a;
+    --shadow: none;
+    --k-weinig-bg: #4a1f1c; --k-weinig-ink: #ffb4ab;
+    --k-normaal-bg: #173826; --k-normaal-ink: #9fe0b5;
+    --k-veel-bg: #1b2e4a; --k-veel-ink: #a9c8f5;
+    --deal-bg: #3b3017; --deal-ink: #efd08a;
+    color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -121,16 +148,10 @@ main { max-width: 900px; margin: 0 auto; padding: 8px 16px; outline: none; }
 }
 
 .badge { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-.badge.k-weinig { background: #fde2e0; color: #8a1c14; }
-.badge.k-normaal { background: #dcf1e4; color: #145a32; }
-.badge.k-veel { background: #e1ecfb; color: #174a8b; }
-.badge.deal { background: #f5ecd6; color: #6d5212; }
-@media (prefers-color-scheme: dark) {
-  .badge.k-weinig { background: #4a1f1c; color: #ffb4ab; }
-  .badge.k-normaal { background: #173826; color: #9fe0b5; }
-  .badge.k-veel { background: #1b2e4a; color: #a9c8f5; }
-  .badge.deal { background: #3b3017; color: #efd08a; }
-}
+.badge.k-weinig { background: var(--k-weinig-bg); color: var(--k-weinig-ink); }
+.badge.k-normaal { background: var(--k-normaal-bg); color: var(--k-normaal-ink); }
+.badge.k-veel { background: var(--k-veel-bg); color: var(--k-veel-ink); }
+.badge.deal { background: var(--deal-bg); color: var(--deal-ink); }
 
 .alert { display: block; background: var(--warn-bg); color: var(--warn-ink); padding: 12px 14px; border-radius: 12px; margin: 12px 0; }
 
