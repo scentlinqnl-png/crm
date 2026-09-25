@@ -7,6 +7,7 @@ import {
 import { planFromSelection, mapsRouteUrl } from './planner.js';
 import { putBlob, getBlob, deleteBlob, compressImage, signaturePad } from './media.js';
 import { shareOrDownloadReport } from './report.js';
+import { activatePlannedAssets } from './quotes.js';
 import { consumeStock, adjustStock, activeStock, lowStock, materialText, seedStock } from './stock.js';
 import { $, $$, h, fmtDate, toast, weekStart, openDialog, klantOptions, hooks } from './ui.js';
 
@@ -199,6 +200,7 @@ export function closeTicketDialog(t) {
       }
     });
     consumeStock(used, t.code);
+    if (t.type === 'installatie') activatePlannedAssets(t.nr);
     toast(`${t.code} afgerond${Number(d.ml) ? ' en verbruik vastgelegd' : ''}`);
     hooks.render();
     hooks.sync();

@@ -6,6 +6,7 @@ import {
 } from './store.js';
 import { $, $$, h, eur, ml, fmtDate, toast, openDialog, telHref, hooks } from './ui.js';
 import { ticketItem, bindTicketList, ticketDialog } from './service.js';
+import { quotesFor, QUOTE_STATUS } from './quotes.js';
 
 const done = (msg) => { toast(msg); hooks.render(); hooks.sync(); };
 
@@ -90,7 +91,7 @@ export function assetDialog(nr, pre = {}) {
     </div>
     <div class="row2">
       <label>Geur<input name="geur" value="${h(a.geur)}"></label>
-      <label>Status<select name="status">${['actief', 'proef', 'defect', 'verwijderd'].map((x) => `<option ${a.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <label>Status<select name="status">${['gepland', 'actief', 'proef', 'defect', 'verwijderd'].map((x) => `<option ${a.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     </div>
     <label>Onderhoud elke<select name="interval">${[['', 'geen vast schema'], ['3', '3 maanden'], ['6', '6 maanden'], ['12', '12 maanden']].map(([v, l]) => `<option value="${v}" ${String(a.interval || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <div class="actions">
@@ -143,6 +144,11 @@ export function klantCrmSections(nr) {
     <section class="card">
       <div class="card-head"><h2>Contactpersonen</h2><button class="btn small" id="newContact">+ Contact</button></div>
       <ul class="list compact">${contacts.map((c) => `<li class="clickable" data-contact="${h(c.id)}"><div><b>${h(c.naam)}</b>${c.primair ? ' <span class="badge k-normaal">primair</span>' : ''}<span class="sub">${[c.functie, c.telefoon, c.email].filter(Boolean).map(h).join(' · ') || '–'}</span></div>${c.telefoon ? `<a class="btn small" href="${h(telHref(c.telefoon))}">📞</a>` : ''}${c.email ? `<a class="btn small" href="mailto:${h(c.email)}">✉️</a>` : ''}</li>`).join('') || '<li class="muted">Nog geen contactpersonen.</li>'}</ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Offertes</h2><a class="btn small" href="#/offerte?nr=${h(nr)}">+ Offerte</a></div>
+      <ul class="list compact">${quotesFor(nr).map((q) => `<li><a href="#/offerte?nr=${h(nr)}&id=${h(q.id)}"><b>${h(q.code)} · ${h(q.aantal)}× ${h(q.systeem)}</b><span class="sub">${fmtDate(q.datum)} · ${eur(q.perMaand)} /mnd${q.eenmalig ? ` + ${eur(q.eenmalig)}` : ''}</span></a><span class="badge ${q.status === 'geaccepteerd' ? 'k-normaal' : q.status === 'afgewezen' ? 'k-weinig' : ''}">${h(QUOTE_STATUS[q.status])}</span></li>`).join('') || '<li class="muted">Nog geen offertes.</li>'}</ul>
     </section>
 
     <section class="card">

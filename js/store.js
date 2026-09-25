@@ -58,6 +58,8 @@ const empty = () => ({
   assets: [],        // {id, nr, systeem, serienummer, locatie, geplaatst, geur, laatsteOnderhoud, status, updatedAt, deleted}
   serviceRoutes: {}, // datum -> route (zelfde vorm als een planning)
   stock: [],         // {id, naam, eenheid, voorraad, minimum, updatedAt, deleted}
+  quotes: [],        // {id, code, nr, systeem, aantal, model, geur, notitie, eenmalig, perMaand, status, datum, geaccepteerd, dealId, updatedAt, deleted}
+  quoteSeq: 0,
   stockMoves: [],    // {id, itemId, n, reden, datum, updatedAt}
   settings: structuredClone(DEFAULT_SETTINGS),
   lastSync: null,
@@ -321,6 +323,7 @@ export const CRM_SHEETS = {
   contacts: { name: 'CRM_Contactpersonen', cols: ['id', 'nr', 'naam', 'functie', 'telefoon', 'email', 'primair', 'updatedAt', 'deleted'] },
   contracts: { name: 'CRM_Contracten', cols: ['id', 'nr', 'soort', 'omschrijving', 'perMaand', 'eenmalig', 'start', 'eind', 'opzegMnd', 'status', 'updatedAt', 'deleted'] },
   assets: { name: 'CRM_Systemen', cols: ['id', 'nr', 'systeem', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'interval', 'status', 'updatedAt', 'deleted'] },
+  quotes: { name: 'CRM_Offertes', cols: ['id', 'code', 'nr', 'systeem', 'aantal', 'model', 'geur', 'notitie', 'eenmalig', 'perMaand', 'status', 'datum', 'geaccepteerd', 'dealId', 'updatedAt', 'deleted'] },
   stock: { name: 'CRM_Voorraad', cols: ['id', 'naam', 'eenheid', 'voorraad', 'minimum', 'updatedAt', 'deleted'] },
   stockMoves: { name: 'CRM_Voorraadmutaties', cols: ['id', 'itemId', 'n', 'reden', 'datum', 'updatedAt'] },
 };
@@ -335,7 +338,7 @@ function fromRow(cols, row) {
   for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd', 'interval', 'voorraad', 'minimum', 'n']) if (k in o) o[k] = o[k] === null || !Number.isFinite(Number(o[k])) ? null : Number(o[k]);
   if ('primair' in o) o.primair = o.primair === true || o.primair === 'TRUE' || o.primair === 1;
   if (typeof o.fotos === 'string') o.fotos = o.fotos ? o.fotos.split(',') : [];
-  for (const k of ['eenheid', 'itemId', 'reden', 'geslotenTijd', 'monteur', 'materiaal', 'handtekening', 'getekendDoor', 'code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
+  for (const k of ['systeem', 'model', 'geaccepteerd', 'dealId', 'eenheid', 'itemId', 'reden', 'geslotenTijd', 'monteur', 'materiaal', 'handtekening', 'getekendDoor', 'code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
     if (k in o && o[k] !== null) o[k] = String(o[k]);
   }
   for (const k of ['id', 'datum', 'tijd', 'gesloten', 'titel', 'notitie', 'type', 'fase', 'status', 'updatedAt', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'circulatie', 'systeem']) {

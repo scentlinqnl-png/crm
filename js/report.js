@@ -1,5 +1,6 @@
 // PDF-servicerapport (jsPDF) met klant, systeem, werkzaamheden, verbruik, foto's en handtekening.
-import { store, customer, fullAddress, contactsFor, TICKET_TYPES, TICKET_PRIO } from './store.js';
+import { store, customer, fullAddress, contactsFor, profile, TICKET_TYPES, TICKET_PRIO } from './store.js';
+import { calcQuote, LEASE_MND } from './quotes.js';
 import { getBlob, blobToDataURL } from './media.js';
 import { download } from './excel.js';
 
@@ -166,6 +167,84 @@ export async function shareOrDownloadReport(ticket) {
     } catch (e) {
       if (e?.name === 'AbortError') return 'geannuleerd';
     }
+  }
+  await download(name, blob);
+  return 'gedownload';
+}
+
+// ---------- offerte als PDF ----------
+
+const eurPdf = (n) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(n || 0).replace(/\u00a0/g, ' ');
+
+export async function buildQuotePdf(q) {
+  const JsPDF = await loadJsPDF();
+  const s = store.get();
+  const b = s.settings.bedrijf || {};
+  const c = customer(q.nr) || {};
+  const contact = contactsFor(q.nr)[0];
+  const calc = calcQuote(q);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210;
+  const M = 18;
+  const gold = [176, 138, 62];
+  let y = M;
+  doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(20).text(b.naam || 'Scentlinq Pro Benelux', M, y + 4);
+  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(110);
+  [b.adres, [b.telefoon, b.email].filter(Boolean).join(' · '), b.kvk].filter(Boolean).forEach((l, i) => doc.text(l, M, y + 10 + i * 4.2));
+  doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(...gold).text('Offerte', W - M, y + 4, { align: 'right' });
+  doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(40).text(`${q.code} · ${nlDate(q.datum)}`, W - M, y + 10, { align: 'right' });
+  y += 32;
+  doc.setFontSize(10).setTextColor(30);
+  [c.naam, contact ? `t.a.v. ${contact.naam}` : '', c.adres, [c.postcode, c.plaats].filter(Boolean).join(' ')].filter(Boolean).forEach((l, i) => doc.text(l, M, y + i * 5));
+  y += 28;
+  const p = profile(q.nr);
+  doc.setFontSize(10).setTextColor(40);
+  const intro = `Hartelijk dank voor uw interesse in geurmarketing van ${b.naam || 'Scentlinq Pro'}. Op basis van ${p.m3 ? `een ruimte van ${p.m3} m³` : 'uw ruimte'}${q.geur ? ` en het geurprofiel ${q.geur}` : ''} bieden wij u het volgende aan.`;
+  const lines = doc.splitTextToSize(intro, W - 2 * M);
+  doc.text(lines, M, y);
+  y += lines.length * 5 + 6;
+
+  // tabel
+  const col = [M, W - M - 60, W - M];
+  const row = (a, n, bedrag, bold = false) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal').setTextColor(30);
+    const t = doc.splitTextToSize(a, col[1] - M - 6);
+    doc.text(t, M, y);
+    doc.text(n, col[1], y);
+    doc.text(bedrag, col[2], y, { align: 'right' });
+    y += t.length * 5 + 3;
+  };
+  doc.setDrawColor(...gold).setLineWidth(0.4).line(M, y - 4, W - M, y - 4);
+  doc.setFontSize(9).setTextColor(110).text('OMSCHRIJVING', M, y).text('AANTAL', col[1], y).text('BEDRAG', col[2], y, { align: 'right' });
+  y += 7;
+  doc.setFontSize(10);
+  if (q.model === 'koop') row(`${calc.sys.naam} geurverspreidingssysteem, eenmalige aanschaf incl. installatie`, String(calc.n), eurPdf(calc.eenmalig));
+  else row(`${calc.sys.naam} geurverspreidingssysteem, lease ${LEASE_MND} maanden incl. installatie`, String(calc.n), `${eurPdf(calc.leasePerMaand)} /mnd`);
+  row(`Serviceabonnement: periodieke navulling, onderhoud en storingsdienst${q.geur ? ` (geur: ${q.geur})` : ''}`, String(calc.n), `${eurPdf(calc.abo)} /mnd`);
+  doc.setDrawColor(200).setLineWidth(0.2).line(M, y - 2, W - M, y - 2);
+  y += 3;
+  row('Totaal per maand', '', eurPdf(calc.perMaand), true);
+  if (calc.eenmalig) row('Eenmalig', '', eurPdf(calc.eenmalig), true);
+  row('Totaal eerste jaar', '', eurPdf(calc.jaar + calc.eenmalig), true);
+  y += 4;
+  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(90);
+  const cond = [q.notitie, 'Alle bedragen zijn exclusief btw. Deze offerte is 30 dagen geldig.', 'Veiligheidsbladen (SDS) en certificaten van de geuren worden op verzoek meegestuurd.'].filter(Boolean).join('\n');
+  const cl = doc.splitTextToSize(cond, W - 2 * M);
+  doc.text(cl, M, y);
+  y += cl.length * 4.5 + 16;
+  doc.setFontSize(10).setTextColor(40).text('Voor akkoord', M, y);
+  doc.setDrawColor(180).line(M, y + 18, M + 70, y + 18);
+  doc.text('Naam, datum en handtekening', M, y + 23);
+  doc.setFontSize(8).setTextColor(140).text(`${b.naam || 'Scentlinq Pro Benelux'} · ${q.code}`, M, 290);
+  return doc.output('blob');
+}
+
+export async function shareOrDownloadQuote(q) {
+  const blob = await buildQuotePdf(q);
+  const name = `Offerte ${q.code} ${(customer(q.nr)?.naam || '').replace(/[^\w\- ]+/g, '')}.pdf`;
+  const file = new File([blob], name, { type: 'application/pdf' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return 'gedeeld'; } catch (e) { if (e?.name === 'AbortError') return 'geannuleerd'; }
   }
   await download(name, blob);
   return 'gedownload';

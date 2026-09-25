@@ -232,6 +232,7 @@ async function syncCrm(base) {
     store.update((s) => {
       s[key] = merged;
       // Ticketnummers blijven uniek over apparaten heen.
+      if (key === 'quotes') s.quoteSeq = Math.max(s.quoteSeq || 0, ...merged.map((q) => parseInt(String(q.code || '').slice(2), 10) || 0));
       if (key === 'tickets') s.ticketSeq = Math.max(s.ticketSeq || 0, ...merged.map((t) => parseInt(String(t.code || '').slice(2), 10) || 0));
     });
     const values = [def.cols, ...merged.map((o) => def.cols.map((c) => (o[c] === null || o[c] === undefined ? '' : Array.isArray(o[c]) ? o[c].join(',') : o[c])))];

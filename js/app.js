@@ -10,6 +10,8 @@ import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRo
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
 import { seedStock } from './stock.js';
+import { calcQuote, saveQuote, setQuoteStatus, acceptQuote, QUOTE_STATUS, LEASE_MND } from './quotes.js';
+import { shareOrDownloadQuote } from './report.js';
 import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
 import { planWithClaude, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
@@ -1233,62 +1235,99 @@ function viewOfferte(params) {
   const nr = params.get('nr');
   const c = customer(nr);
   if (!c) return '<p class="card">Klant niet gevonden.</p>';
+  const q = params.get('id') ? s.quotes.find((x) => x.id === params.get('id')) : null;
   const p = profile(nr);
-  const sys = s.settings.systemen.find((x) => x.naam === (p.systeem || adviseSystem(p)?.systeem)) || s.settings.systemen[0];
+  const sysNaam = q?.systeem || (s.settings.systemen.find((x) => x.naam === (p.systeem || adviseSystem(p)?.systeem)) || s.settings.systemen[0]).naam;
+  const locked = q && ['geaccepteerd', 'afgewezen'].includes(q.status);
   return `
-    <a class="back noprint" href="#/klant/${h(nr)}">‹ ${h(c.naam)}</a>
-    <form class="card form noprint" id="offForm">
-      <h1>Offerte</h1>
-      <div class="row2">
-        <label>Systeem<select name="systeem">${s.settings.systemen.map((x) => `<option ${x.naam === sys.naam ? 'selected' : ''}>${h(x.naam)}</option>`).join('')}</select></label>
-        <label>Aantal<input name="aantal" type="number" min="1" value="${h(p.aantal || 1)}"></label>
+    <a class="back" href="#/klant/${h(nr)}">‹ ${h(c.naam)}</a>
+    <form class="card form" id="offForm">
+      <div class="card-head"><h1>${q ? `Offerte ${h(q.code)}` : 'Nieuwe offerte'}</h1>${q ? `<span class="badge ${q.status === 'geaccepteerd' ? 'k-normaal' : q.status === 'afgewezen' ? 'k-weinig' : ''}">${h(QUOTE_STATUS[q.status])}</span>` : ''}</div>
+      <fieldset ${locked ? 'disabled' : ''}>
+        <div class="row2">
+          <label>Systeem<select name="systeem">${s.settings.systemen.map((x) => `<option ${x.naam === sysNaam ? 'selected' : ''}>${h(x.naam)}</option>`).join('')}</select></label>
+          <label>Aantal<input name="aantal" type="number" min="1" value="${h(q?.aantal || p.aantal || 1)}"></label>
+        </div>
+        <div class="row2">
+          <label>Model<select name="model"><option value="koop" ${q?.model === 'koop' ? 'selected' : ''}>Eenmalige aanschaf</option><option value="lease" ${q?.model === 'lease' ? 'selected' : ''}>Lease (${LEASE_MND} mnd)</option></select></label>
+          <label>Geurprofiel<input name="geur" value="${h(q?.geur ?? (p.geurprofiel || statFor(stats(), nr).laatsteGeur))}"></label>
+        </div>
+        <label>Opmerking / voorwaarden<textarea name="notitie" rows="2">${h(q?.notitie ?? 'Inclusief installatie, periodieke navulling en onderhoud.')}</textarea></label>
+      </fieldset>
+      <div class="actions left">
+        ${locked ? '' : '<button type="button" class="btn primary" id="saveQuote">Opslaan</button>'}
+        <button type="button" class="btn" id="quotePdf">📄 PDF delen</button>
+        ${q && !locked ? '<button type="button" class="btn ok" id="acceptQuote">✅ Akkoord → contract</button><button type="button" class="btn ghost danger" id="rejectQuote">Afgewezen</button>' : ''}
       </div>
-      <div class="row2">
-        <label>Model<select name="model"><option value="koop">Eenmalige aanschaf</option><option value="lease">Lease (36 mnd)</option></select></label>
-        <label>Geurprofiel<input name="geur" value="${h(p.geurprofiel || statFor(stats(), nr).laatsteGeur)}"></label>
-      </div>
-      <label>Opmerking / voorwaarden<textarea name="notitie" rows="2">Inclusief installatie, periodieke navulling en onderhoud. Veiligheidsbladen (SDS) en certificaten worden meegestuurd.</textarea></label>
-      <div class="actions left"><button type="button" class="btn primary" id="print">🖨️ Afdrukken / PDF</button><button type="button" class="btn" id="toDeal">Als deal opslaan</button></div>
+      <p class="muted small">Opslaan zet de offerte ook als deal in de pipeline (fase Offerte). Bij akkoord maakt de app automatisch het contract, de systemen en een installatieticket aan.</p>
     </form>
     <article class="card quote" id="quote"></article>`;
 }
 viewOfferte.after = (params) => {
-  const s = store.get();
   const nr = params.get('nr');
   const c = customer(nr);
   if (!c) return;
+  let id = params.get('id');
   const form = $('#offForm');
-  const calc = () => {
-    const f = formData(form);
-    const sys = s.settings.systemen.find((x) => x.naam === f.systeem);
-    const n = Number(f.aantal) || 1;
-    const hardware = f.model === 'koop' ? sys.prijs * n : Math.round((sys.prijs * n * 1.15) / 36);
-    const abo = sys.abonnement * n;
-    return { f, sys, n, hardware, abo, jaar: (f.model === 'koop' ? 0 : hardware * 12) + abo * 12 };
-  };
+  const fields = () => ({ ...formData(form), nr, id });
   const draw = () => {
-    const { f, sys, n, hardware, abo, jaar } = calc();
+    const f = fields();
+    const k = calcQuote(f);
     $('#quote').innerHTML = `
-      <header class="q-head"><div><b>Scentlinq Pro Benelux</b><div class="sub">Offerte ${todayISO()}</div></div><img src="icons/icon.svg" width="40" height="40" alt=""></header>
-      <p><b>${h(c.naam)}</b><br>${h(c.adres)}<br>${h(c.postcode)} ${h(c.plaats)}${profile(nr).contactpersoon ? `<br>t.a.v. ${h(profile(nr).contactpersoon)}` : ''}</p>
       <table class="q-table">
         <thead><tr><th>Omschrijving</th><th>Aantal</th><th>Bedrag</th></tr></thead>
         <tbody>
-          <tr><td>${h(sys.naam)} geurverspreidingssysteem — ${f.model === 'koop' ? 'eenmalige aanschaf' : 'lease per maand (36 mnd)'}</td><td>${n}</td><td>${eur(hardware)}${f.model === 'koop' ? '' : ' /mnd'}</td></tr>
-          <tr><td>Serviceabonnement navulling & onderhoud${f.geur ? ` — geur: ${h(f.geur)}` : ''}</td><td>${n}</td><td>${eur(abo)} /mnd</td></tr>
+          <tr><td>${h(k.sys.naam)} — ${f.model === 'koop' ? 'eenmalige aanschaf' : `lease ${LEASE_MND} mnd`}</td><td>${k.n}</td><td>${f.model === 'koop' ? eur(k.eenmalig) : `${eur(k.leasePerMaand)} /mnd`}</td></tr>
+          <tr><td>Serviceabonnement${f.geur ? ` — ${h(f.geur)}` : ''}</td><td>${k.n}</td><td>${eur(k.abo)} /mnd</td></tr>
         </tbody>
-        <tfoot><tr><td colspan="2">Terugkerend per jaar</td><td>${eur(jaar)}</td></tr>${f.model === 'koop' ? `<tr><td colspan="2">Eenmalig</td><td>${eur(hardware)}</td></tr>` : ''}</tfoot>
+        <tfoot><tr><td colspan="2">Per maand</td><td>${eur(k.perMaand)}</td></tr>${k.eenmalig ? `<tr><td colspan="2">Eenmalig</td><td>${eur(k.eenmalig)}</td></tr>` : ''}<tr><td colspan="2">Eerste jaar</td><td>${eur(k.jaar + k.eenmalig)}</td></tr></tfoot>
       </table>
-      <p class="sub">${h(f.notitie)}</p>
-      <p class="sub">Alle bedragen excl. btw. Prijzen zijn indicatief, pas ze aan in Meer → Systemen.</p>`;
+      <p class="sub">Excl. btw. Prijzen per systeem pas je aan in Meer → Systemen.</p>`;
   };
   form.addEventListener('input', draw);
   draw();
-  $('#print').addEventListener('click', () => window.print());
-  $('#toDeal').addEventListener('click', () => {
-    const { sys, n, hardware, jaar, f } = calc();
-    const waarde = jaar + (f.model === 'koop' ? hardware : 0);
-    dealDialog({ nr, titel: `${n}× ${sys.naam} + abonnement`, waarde, fase: s.settings.fases.find((x) => /offerte/i.test(x)) || s.settings.fases[0] });
+  const save = () => {
+    const q = saveQuote(fields());
+    id = q.id;
+    return q;
+  };
+  $('#saveQuote')?.addEventListener('click', () => {
+    const q = save();
+    toast(`Offerte ${q.code} opgeslagen en in de pipeline gezet`);
+    location.hash = `#/offerte?nr=${nr}&id=${q.id}`;
+    runSync({ quiet: true });
+  });
+  $('#quotePdf').addEventListener('click', async () => {
+    const q = $('#saveQuote') ? save() : store.get().quotes.find((x) => x.id === id);
+    if (q.status === 'concept') setQuoteStatus(q.id, 'verstuurd');
+    try {
+      const how = await shareOrDownloadQuote(store.get().quotes.find((x) => x.id === q.id));
+      if (how !== 'geannuleerd') toast(`Offerte ${how}`);
+    } catch (e) {
+      toast('PDF maken mislukt: ' + e.message, 5000);
+    }
+    render();
+    runSync({ quiet: true });
+  });
+  $('#rejectQuote')?.addEventListener('click', async () => {
+    if (!(await ask('Offerte als afgewezen markeren? De deal gaat naar verloren.', 'Afgewezen'))) return;
+    setQuoteStatus(id, 'afgewezen');
+    toast('Offerte afgewezen');
+    render();
+    runSync({ quiet: true });
+  });
+  $('#acceptQuote')?.addEventListener('click', () => {
+    save();
+    openDialog(`
+      <h2>Akkoord verwerken</h2>
+      <p>Dit maakt aan: een actief contract, de systemen (status gepland), een installatieticket, en zet de deal op gewonnen.</p>
+      <label>Installatiedatum (optioneel)<input type="date" name="datum"></label>
+      <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Verwerken</button></div>`, (d) => {
+      const r = acceptQuote(id, { installatieDatum: d.datum });
+      toast(`🎉 Contract aangemaakt, ${r.assets} systeem/systemen gepland, installatieticket ${r.ticket.code}`);
+      location.hash = `#/klant/${nr}`;
+      runSync({ quiet: true });
+    });
   });
 };
 

@@ -93,7 +93,7 @@ export function exportMyMaps(plan) {
 
 // ---------- standalone back-up (JSON, geen Excel nodig) ----------
 
-const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'stock', 'stockMoves', 'settings'];
+const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'stock', 'stockMoves', 'quotes', 'quoteSeq', 'settings'];
 
 export async function exportJsonBackup() {
   const s = store.get();
