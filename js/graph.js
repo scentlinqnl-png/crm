@@ -1,6 +1,7 @@
 // Microsoft 365-koppeling: aanmelden (OAuth2 + PKCE, zonder extra libraries) en
 // Klantkaart.xlsx in SharePoint lezen/bijwerken via de Microsoft Graph Excel-API.
 
+import { cellValue } from './excel.js';
 import { store, parseBlad1, parseVerbruik, parseAfstanden, mergeWorkbook, isoToSerial, mergeById, CRM_SHEETS, crmFromRows } from './store.js';
 
 const TOKEN_KEY = 'klantkaart.token';
@@ -232,10 +233,11 @@ async function syncCrm(base) {
     store.update((s) => {
       s[key] = merged;
       // Ticketnummers blijven uniek over apparaten heen.
+      if (key === 'orders') s.orderSeq = Math.max(s.orderSeq || 0, ...merged.map((q) => parseInt(String(q.code || '').slice(2), 10) || 0));
       if (key === 'quotes') s.quoteSeq = Math.max(s.quoteSeq || 0, ...merged.map((q) => parseInt(String(q.code || '').slice(2), 10) || 0));
       if (key === 'tickets') s.ticketSeq = Math.max(s.ticketSeq || 0, ...merged.map((t) => parseInt(String(t.code || '').slice(2), 10) || 0));
     });
-    const values = [def.cols, ...merged.map((o) => def.cols.map((c) => (o[c] === null || o[c] === undefined ? '' : Array.isArray(o[c]) ? o[c].join(',') : o[c])))];
+    const values = [def.cols, ...merged.map((o) => def.cols.map((c) => cellValue(o[c])))];
     const addr = `A1:${colLetter(def.cols.length)}${values.length}`;
     // Datum/tijd als tekst bewaren zodat Excel ze niet omzet.
     await graph(`${base}${ws(def.name)}/range(address='${addr}')`, {

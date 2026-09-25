@@ -249,3 +249,59 @@ export async function shareOrDownloadQuote(q) {
   await download(name, blob);
   return 'gedownload';
 }
+
+// ---------- bestelbon (inkooporder) ----------
+
+export async function buildOrderPdf(o) {
+  const JsPDF = await loadJsPDF();
+  const s = store.get();
+  const b = s.settings.bedrijf || {};
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210;
+  const M = 18;
+  const gold = [176, 138, 62];
+  let y = M;
+  doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(20).text(b.naam || 'Scentlinq Pro Benelux', M, y + 4);
+  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(110);
+  [b.adres, [b.telefoon, b.email].filter(Boolean).join(' · '), b.kvk].filter(Boolean).forEach((l, i) => doc.text(l, M, y + 10 + i * 4.2));
+  doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(...gold).text('Bestelling', W - M, y + 4, { align: 'right' });
+  doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(40).text(`${o.code} · ${nlDate(o.besteldOp || o.datum)}`, W - M, y + 10, { align: 'right' });
+  y += 32;
+  doc.setFontSize(10).setTextColor(30).text(`Aan: ${o.leverancier}`, M, y);
+  doc.text(`Afleveren: ${b.adres || (o.locatie || 'magazijn')}`, M, y + 5);
+  y += 16;
+  doc.setDrawColor(...gold).setLineWidth(0.4).line(M, y - 4, W - M, y - 4);
+  doc.setFontSize(9).setTextColor(110).text('ARTIKELNR.', M, y).text('OMSCHRIJVING', M + 32, y).text('AANTAL', 140, y, { align: 'right' }).text('PRIJS', 165, y, { align: 'right' }).text('TOTAAL', W - M, y, { align: 'right' });
+  y += 7;
+  doc.setFontSize(10).setTextColor(30);
+  let tot = 0;
+  for (const r of o.regels) {
+    const it = s.stock.find((x) => x.id === r.itemId) || {};
+    const lines = doc.splitTextToSize(it.naam || '?', 140 - M - 32 - 14);
+    const regel = Number(r.n) * Number(r.prijs || 0);
+    tot += regel;
+    doc.text(it.artikelnr || '', M, y);
+    doc.text(lines, M + 32, y);
+    doc.text(String(r.n), 140, y, { align: 'right' });
+    doc.text(eurPdf(r.prijs), 165, y, { align: 'right' });
+    doc.text(eurPdf(regel), W - M, y, { align: 'right' });
+    y += lines.length * 5 + 2;
+  }
+  doc.setDrawColor(200).setLineWidth(0.2).line(M, y, W - M, y);
+  y += 6;
+  doc.setFont('helvetica', 'bold').text('Totaal excl. btw', 140, y, { align: 'right' }).text(eurPdf(tot), W - M, y, { align: 'right' });
+  if (o.notitie) { y += 12; doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(90).text(doc.splitTextToSize(o.notitie, W - 2 * M), M, y); }
+  doc.setFontSize(8).setTextColor(140).text(`${b.naam || 'Scentlinq Pro Benelux'} · ${o.code}`, M, 290);
+  return doc.output('blob');
+}
+
+export async function shareOrDownloadOrder(o) {
+  const blob = await buildOrderPdf(o);
+  const name = `Bestelling ${o.code} ${o.leverancier.replace(/[^\w\- ]+/g, '')}.pdf`;
+  const file = new File([blob], name, { type: 'application/pdf' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return 'gedeeld'; } catch (e) { if (e?.name === 'AbortError') return 'geannuleerd'; }
+  }
+  await download(name, blob);
+  return 'gedownload';
+}

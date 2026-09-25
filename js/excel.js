@@ -68,7 +68,7 @@ export function exportBackup() {
   XLSX.utils.book_append_sheet(wb, wsV, 'Verbruik');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(afst), 'Afstanden');
   for (const [key, def] of Object.entries(CRM_SHEETS)) {
-    const rows = [def.cols, ...s[key].map((o) => def.cols.map((c) => (Array.isArray(o[c]) ? o[c].join(',') : o[c] ?? '')))];
+    const rows = [def.cols, ...s[key].map((o) => def.cols.map((c) => cellValue(o[c])))];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), def.name);
   }
   XLSX.writeFile(wb, `Klantkaart-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -93,7 +93,7 @@ export function exportMyMaps(plan) {
 
 // ---------- standalone back-up (JSON, geen Excel nodig) ----------
 
-const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'stock', 'stockMoves', 'quotes', 'quoteSeq', 'settings'];
+const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'stock', 'stockMoves', 'quotes', 'quoteSeq', 'orders', 'orderSeq', 'settings'];
 
 export async function exportJsonBackup() {
   const s = store.get();
@@ -119,3 +119,11 @@ export async function restoreJsonBackup(file) {
 }
 
 const todayStamp = () => new Date().toISOString().slice(0, 10);
+
+// Lijst met teksten als komma-lijst, andere objecten als JSON (voor Excel-tabbladen).
+export function cellValue(v) {
+  if (v === null || v === undefined) return '';
+  if (Array.isArray(v) && v.every((x) => typeof x === 'string')) return v.join(',');
+  if (typeof v === 'object') return JSON.stringify(v);
+  return v;
+}

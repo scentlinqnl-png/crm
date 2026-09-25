@@ -9,7 +9,8 @@ import * as m365 from './graph.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
-import { seedStock } from './stock.js';
+import { seedStock, migrateStock, lowStock } from './stock.js';
+import { viewVoorraad } from './voorraad.js';
 import { calcQuote, saveQuote, setQuoteStatus, acceptQuote, QUOTE_STATUS, LEASE_MND } from './quotes.js';
 import { shareOrDownloadQuote } from './report.js';
 import { viewImport } from './import.js';
@@ -975,6 +976,7 @@ function viewMeer() {
   const missing = missingPlaces().length;
   return `
     <h1>Meer</h1>
+    <a class="card nav-card" href="#/voorraad"><b>📦 Voorraadbeheer</b><span class="sub">Magazijn en bus, bestellen bij leveranciers, overboeken, telling${lowStock().length ? ` · <span class="late">${lowStock().length} onder minimum</span>` : ''}</span></a>
     <a class="card nav-card" href="#/import"><b>📥 Importeren uit CSV of Excel</b><span class="sub">Klanten, contactpersonen, contracten en systemen, bijvoorbeeld uit je boekhoudpakket</span></a>
     <a class="card nav-card" href="#/rapport"><b>📈 Rapportage</b><span class="sub">MRR, contracten, pipelineconversie, verbruik per sector en servicecijfers</span></a>
     <section class="card">
@@ -1029,6 +1031,10 @@ function viewMeer() {
         </div>
         <label>KvK / btw<input name="kvk" value="${h(s.settings.bedrijf.kvk)}"></label>
         <label>Naam monteur (dit apparaat)<input name="monteur" value="${h(s.settings.monteur)}"></label>
+        <div class="row2">
+          <label>Voorraadlocaties (komma-gescheiden, eerste = magazijn)<input name="voorraadLocaties" value="${h(s.settings.voorraadLocaties.join(', '))}"></label>
+          <label>Locatie van dit apparaat<select name="mijnLocatie">${s.settings.voorraadLocaties.map((l) => `<option ${l === s.settings.mijnLocatie ? 'selected' : ''}>${h(l)}</option>`).join('')}</select></label>
+        </div>
         <label class="inline"><input type="checkbox" name="autoOnderhoud" ${s.settings.autoOnderhoud ? 'checked' : ''}> Onderhoudstickets automatisch aanmaken (${h(s.settings.onderhoudVooruit)} dagen vooruit)</label>
         <div class="actions left"><button class="btn primary">Opslaan</button></div>
       </form>
@@ -1149,6 +1155,9 @@ viewMeer.after = async () => {
     store.update((s) => {
       s.settings.bedrijf = { naam: d.naam.trim(), adres: d.adres.trim(), telefoon: d.telefoon.trim(), email: d.email.trim(), kvk: d.kvk.trim() };
       s.settings.monteur = d.monteur.trim();
+      const locs = d.voorraadLocaties.split(',').map((x) => x.trim()).filter(Boolean);
+      if (locs.length) s.settings.voorraadLocaties = locs;
+      s.settings.mijnLocatie = locs.includes(d.mijnLocatie) ? d.mijnLocatie : locs[locs.length - 1];
       s.settings.autoOnderhoud = !!d.autoOnderhoud;
     });
     toast('Opgeslagen');
@@ -1405,6 +1414,7 @@ const routes = [
   [/^\/service$/, viewService, 'service', true],
   [/^\/rapport$/, viewRapport, 'meer'],
   [/^\/import$/, viewImport, 'meer'],
+  [/^\/voorraad$/, viewVoorraad, 'service', true],
   [/^\/meer$/, viewMeer, 'meer'],
 ];
 
@@ -1433,6 +1443,7 @@ if (store.get().settings.autoOnderhoud && store.get().assets.length) {
   const n = createMaintenanceTickets();
   if (n) setTimeout(() => toast(`${n} onderhoudsticket(s) aangemaakt volgens schema`), 600);
 }
+migrateStock();
 hooks.render = render;
 hooks.sync = () => runSync({ quiet: true });
 window.addEventListener('hashchange', render);

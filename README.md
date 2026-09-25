@@ -90,7 +90,12 @@ gewonnen dealwaarde en verbruik per maand, cijfers per sector, klanten per statu
 - **Terugkerend onderhoud**: geef een systeem een interval (3/6/12 maanden); de app maakt 14 dagen vooraf een onderhoudsticket.
 - **Offertes**: opslaan met nummer (O-0001), als PDF versturen, en bij akkoord automatisch contract,
   systemen (gepland) en installatieticket aanmaken. Na de installatie worden de systemen actief.
-- **Voorraad in de bus**: artikelen met minimum, aanvullen en afboeken; materiaal bij tickets wordt automatisch afgeboekt.
+- **Voorraadbeheer** (Service › Voorraad of Meer › Voorraadbeheer):
+  - artikelen met artikelnummer, categorie, leverancier, inkoop-/verkoopprijs, minimum, busminimum en bestelaantal;
+  - voorraad per locatie (standaard Magazijn en Bus, zelf uit te breiden) en de voorraadwaarde;
+  - mutaties: ontvangst, verbruik (automatisch bij tickets, van de locatie van het apparaat), overboeking, correctie en retour;
+  - bestelvoorstel per leverancier, inkooporders (B-0001) met PDF-bestelbon; bij ontvangst automatisch inboeken;
+  - bus aanvullen vanuit het magazijn en voorraadtelling met correcties.
 - **Import** (Meer › Importeren): klanten, contactpersonen, contracten en systemen uit CSV of Excel,
   met automatische kolomkoppeling en voorbeeld. Bestaande klanten worden bijgewerkt.
 - **Claude**: naast de salesdag plant Claude ook de helpdeskdag (Service › Route) en maakt een
@@ -182,7 +187,8 @@ python3 -m http.server 8080
 | `js/ui.js` | Gedeelde UI-hulpfuncties |
 | `js/service.js` | Tickets, service-agenda en helpdeskroute |
 | `js/media.js`, `js/report.js` | Foto's/handtekening (IndexedDB) en PDF-rapporten (jsPDF) |
-| `js/quotes.js`, `js/stock.js`, `js/import.js` | Offertes, voorraad en CSV/Excel-import |
+| `js/quotes.js`, `js/import.js` | Offertes en CSV/Excel-import |
+| `js/stock.js`, `js/voorraad.js` | Voorraadbeheer: logica en scherm |
 | `js/crm.js` | Contactpersonen, contracten, systemen, klantstatus en rapportage |
 | `js/store.js` | Lokale opslag, parsing van het werkboek, statistieken/classificatie, navulvoorspelling, calculator |
 | `js/planner.js` | Dagplanner en Google Maps-route |

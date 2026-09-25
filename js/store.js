@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS = {
   ],
   bedrijf: { naam: 'Scentlinq Pro Benelux', adres: '', telefoon: '', email: '', kvk: '' },
   monteur: '',            // naam op het servicerapport (per apparaat)
+  voorraadLocaties: ['Magazijn', 'Bus'],
+  mijnLocatie: 'Bus',     // voorraadlocatie van dit apparaat (verbruik bij tickets)
   autoOnderhoud: true,    // onderhoudstickets automatisch aanmaken voor systemen met een interval
   onderhoudVooruit: 14,   // zoveel dagen vóór de vervaldatum aanmaken
   claudeProxy: '',        // optioneel: eigen proxy voor de Anthropic API
@@ -57,10 +59,12 @@ const empty = () => ({
   contracts: [],     // {id, nr, soort, omschrijving, perMaand, eenmalig, start, eind, opzegMnd, status, updatedAt, deleted}
   assets: [],        // {id, nr, systeem, serienummer, locatie, geplaatst, geur, laatsteOnderhoud, status, updatedAt, deleted}
   serviceRoutes: {}, // datum -> route (zelfde vorm als een planning)
-  stock: [],         // {id, naam, eenheid, voorraad, minimum, updatedAt, deleted}
+  stock: [],         // {id, artikelnr, naam, categorie, eenheid, inkoop, verkoop, leverancier, minimum, minBus, bestelAantal, qty:{locatie:n}, updatedAt, deleted}
+  orders: [],        // inkooporders {id, code, leverancier, regels:[{itemId,n,prijs}], status, datum, besteldOp, ontvangenOp, locatie, notitie, updatedAt, deleted}
+  orderSeq: 0,
   quotes: [],        // {id, code, nr, systeem, aantal, model, geur, notitie, eenmalig, perMaand, status, datum, geaccepteerd, dealId, updatedAt, deleted}
   quoteSeq: 0,
-  stockMoves: [],    // {id, itemId, n, reden, datum, updatedAt}
+  stockMoves: [],    // {id, itemId, n, locatie, type, naar, reden, ref, datum, updatedAt}
   settings: structuredClone(DEFAULT_SETTINGS),
   lastSync: null,
   source: null,      // 'import' | 'm365'
@@ -324,8 +328,9 @@ export const CRM_SHEETS = {
   contracts: { name: 'CRM_Contracten', cols: ['id', 'nr', 'soort', 'omschrijving', 'perMaand', 'eenmalig', 'start', 'eind', 'opzegMnd', 'status', 'updatedAt', 'deleted'] },
   assets: { name: 'CRM_Systemen', cols: ['id', 'nr', 'systeem', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'interval', 'status', 'updatedAt', 'deleted'] },
   quotes: { name: 'CRM_Offertes', cols: ['id', 'code', 'nr', 'systeem', 'aantal', 'model', 'geur', 'notitie', 'eenmalig', 'perMaand', 'status', 'datum', 'geaccepteerd', 'dealId', 'updatedAt', 'deleted'] },
-  stock: { name: 'CRM_Voorraad', cols: ['id', 'naam', 'eenheid', 'voorraad', 'minimum', 'updatedAt', 'deleted'] },
-  stockMoves: { name: 'CRM_Voorraadmutaties', cols: ['id', 'itemId', 'n', 'reden', 'datum', 'updatedAt'] },
+  stock: { name: 'CRM_Voorraad', cols: ['id', 'artikelnr', 'naam', 'categorie', 'eenheid', 'inkoop', 'verkoop', 'leverancier', 'minimum', 'minBus', 'bestelAantal', 'qty', 'updatedAt', 'deleted'] },
+  stockMoves: { name: 'CRM_Voorraadmutaties', cols: ['id', 'itemId', 'n', 'locatie', 'type', 'naar', 'reden', 'ref', 'datum', 'updatedAt'] },
+  orders: { name: 'CRM_Inkooporders', cols: ['id', 'code', 'leverancier', 'regels', 'status', 'datum', 'besteldOp', 'ontvangenOp', 'locatie', 'notitie', 'updatedAt', 'deleted'] },
 };
 
 
@@ -335,10 +340,13 @@ function fromRow(cols, row) {
   o.done = o.done === true || o.done === 'TRUE' || o.done === 1;
   o.deleted = o.deleted === true || o.deleted === 'TRUE' || o.deleted === 1;
   if (o.waarde !== undefined) o.waarde = Number(o.waarde) || 0;
-  for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd', 'interval', 'voorraad', 'minimum', 'n']) if (k in o) o[k] = o[k] === null || !Number.isFinite(Number(o[k])) ? null : Number(o[k]);
+  for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd', 'interval', 'minimum', 'minBus', 'bestelAantal', 'inkoop', 'verkoop', 'n']) if (k in o) o[k] = o[k] === null || !Number.isFinite(Number(o[k])) ? null : Number(o[k]);
   if ('primair' in o) o.primair = o.primair === true || o.primair === 'TRUE' || o.primair === 1;
   if (typeof o.fotos === 'string') o.fotos = o.fotos ? o.fotos.split(',') : [];
-  for (const k of ['systeem', 'model', 'geaccepteerd', 'dealId', 'eenheid', 'itemId', 'reden', 'geslotenTijd', 'monteur', 'materiaal', 'handtekening', 'getekendDoor', 'code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
+  for (const k of ['qty', 'regels']) {
+    if (typeof o[k] === 'string') { try { o[k] = JSON.parse(o[k]); } catch { o[k] = k === 'qty' ? {} : []; } }
+  }
+  for (const k of ['artikelnr', 'categorie', 'leverancier', 'locatie', 'naar', 'ref', 'besteldOp', 'ontvangenOp', 'systeem', 'model', 'geaccepteerd', 'dealId', 'eenheid', 'itemId', 'reden', 'geslotenTijd', 'monteur', 'materiaal', 'handtekening', 'getekendDoor', 'code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
     if (k in o && o[k] !== null) o[k] = String(o[k]);
   }
   for (const k of ['id', 'datum', 'tijd', 'gesloten', 'titel', 'notitie', 'type', 'fase', 'status', 'updatedAt', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'circulatie', 'systeem']) {

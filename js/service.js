@@ -9,7 +9,7 @@ import { putBlob, getBlob, deleteBlob, compressImage, signaturePad } from './med
 import { shareOrDownloadReport } from './report.js';
 import { activatePlannedAssets } from './quotes.js';
 import { planServiceWithClaude, claudeReady } from './claude.js';
-import { consumeStock, adjustStock, activeStock, lowStock, materialText, seedStock } from './stock.js';
+import { consumeStock, activeStock, materialText, qty, mijnLocatie } from './stock.js';
 import { $, $$, h, fmtDate, toast, weekStart, openDialog, klantOptions, hooks } from './ui.js';
 
 const prioBadge = (p) => `<span class="badge prio-${h(p)}">${h(TICKET_PRIO[p] || p)}</span>`;
@@ -149,7 +149,7 @@ export function closeTicketDialog(t) {
     <label>Wat is er gedaan?<textarea name="oplossing" rows="3" required placeholder="bijv. Pomp vervangen, geur bijgevuld, instellingen aangepast"></textarea></label>
     <fieldset>
       <legend>Gebruikt materiaal</legend>
-      ${activeStock().length ? `<div class="stock-pick">${activeStock().map((it) => `<label class="stock-row"><span>${h(it.naam)} <span class="sub">${h(it.voorraad)} ${h(it.eenheid || '')} in de bus</span></span><input type="number" name="stock_${h(it.id)}" min="0" step="1" inputmode="numeric" placeholder="0"></label>`).join('')}</div>` : ''}
+      ${activeStock().length ? `<div class="stock-pick">${activeStock().map((it) => `<label class="stock-row"><span>${h(it.naam)} <span class="sub">${qty(it, mijnLocatie())} ${h(it.eenheid || '')} in ${h(mijnLocatie())}</span></span><input type="number" name="stock_${h(it.id)}" min="0" step="1" inputmode="numeric" placeholder="0"></label>`).join('')}</div>` : ''}
       <label>Overig materiaal<input name="materiaal" placeholder="bijv. kabelgoot 1 m"></label>
     </fieldset>
     ${logsVisit ? `
@@ -247,13 +247,14 @@ let ticketFilter = { status: 'open', type: '' };
 
 function tabsNav(active, extra = '') {
   return `<nav class="segmented" aria-label="Service">
-    ${[['tickets', 'Tickets'], ['agenda', 'Agenda'], ['route', 'Route'], ['voorraad', 'Voorraad']].map(([k, l]) => `<a href="#/service?tab=${k}${extra}" class="${active === k ? 'on' : ''}">${l}</a>`).join('')}
+    ${[['tickets', 'Tickets'], ['agenda', 'Agenda'], ['route', 'Route']].map(([k, l]) => `<a href="#/service?tab=${k}${extra}" class="${active === k ? 'on' : ''}">${l}</a>`).join('')}
+    <a href="#/voorraad">Voorraad</a>
   </nav>`;
 }
 
 export function viewService(params) {
   const tab = params.get('tab') || 'tickets';
-  const body = tab === 'agenda' ? agenda(params) : tab === 'route' ? route(params) : tab === 'voorraad' ? voorraad() : tickets();
+  const body = tab === 'agenda' ? agenda(params) : tab === 'route' ? route(params) : tickets();
   return `<div class="card-head"><h1>Service</h1><button class="btn primary small" id="newTicket">+ Ticket</button></div>${tabsNav(tab)}${body}`;
 }
 
@@ -319,56 +320,6 @@ function agenda(params) {
       <h2>Nog niet ingepland (${unplanned.length})</h2>
       <ul class="list tickets">${unplanned.map((t) => ticketItem(t)).join('') || '<li class="muted">Alles is ingepland.</li>'}</ul>
     </section>`;
-}
-
-function voorraad() {
-  const s = store.get();
-  const items = activeStock();
-  const low = new Set(lowStock().map((x) => x.id));
-  const moves = s.stockMoves.slice(-12).reverse();
-  return `
-    ${low.size ? `<p class="alert">⚠️ ${low.size} artikel(en) op of onder het minimum. Bijbestellen of aanvullen.</p>` : ''}
-    <section class="card">
-      <div class="card-head"><h2>Voorraad in de bus</h2><button class="btn small" id="newStock">+ Artikel</button></div>
-      ${items.length ? `<ul class="list stock">${items.map((it) => `<li>
-        <div class="grow" data-stock="${h(it.id)}"><b>${h(it.naam)}</b><span class="sub">minimum ${h(it.minimum ?? 0)} ${h(it.eenheid || '')}</span></div>
-        <button class="icon" data-dec="${h(it.id)}" aria-label="Eén minder">−</button>
-        <b class="stock-n ${low.has(it.id) ? 'late' : ''}">${h(it.voorraad)}</b>
-        <button class="icon" data-inc="${h(it.id)}" aria-label="Eén meer">+</button>
-      </li>`).join('')}</ul>` : `<p class="muted">Nog geen artikelen.</p><button class="btn" id="seedStock">Standaardlijst gebruiken (geurpatronen en onderdelen)</button>`}
-    </section>
-    ${moves.length ? `<section class="card"><h2>Laatste mutaties</h2><ul class="list compact">${moves.map((m) => `<li><div><b>${m.n > 0 ? '+' : ''}${h(m.n)} ${h(s.stock.find((x) => x.id === m.itemId)?.naam || '')}</b><span class="sub">${fmtDate(m.datum)} · ${h(m.reden)}</span></div></li>`).join('')}</ul></section>` : ''}`;
-}
-
-function stockDialog(pre = {}) {
-  const it = { naam: '', eenheid: 'st', voorraad: 0, minimum: 1, ...pre };
-  openDialog(`
-    <h2>${it.id ? 'Artikel bewerken' : 'Nieuw artikel'}</h2>
-    <label>Naam<input name="naam" value="${h(it.naam)}" required></label>
-    <div class="row3">
-      <label>Eenheid<input name="eenheid" value="${h(it.eenheid)}"></label>
-      <label>Voorraad<input name="voorraad" type="number" step="1" value="${h(it.voorraad)}"></label>
-      <label>Minimum<input name="minimum" type="number" step="1" value="${h(it.minimum)}"></label>
-    </div>
-    <div class="actions">
-      ${it.id ? '<button value="delete" class="btn ghost danger" formnovalidate>Verwijderen</button>' : ''}
-      <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
-      <button value="save" class="btn primary">Opslaan</button>
-    </div>`, (d, action) => {
-    store.update((s) => {
-      if (it.id) {
-        const x = s.stock.find((y) => y.id === it.id);
-        if (action === 'delete') x.deleted = true;
-        else Object.assign(x, { naam: d.naam.trim(), eenheid: d.eenheid.trim(), voorraad: Number(d.voorraad) || 0, minimum: Number(d.minimum) || 0 });
-        x.updatedAt = now();
-      } else {
-        s.stock.push({ id: uid(), naam: d.naam.trim(), eenheid: d.eenheid.trim(), voorraad: Number(d.voorraad) || 0, minimum: Number(d.minimum) || 0, deleted: false, updatedAt: now() });
-      }
-    });
-    toast('Voorraad opgeslagen');
-    hooks.render();
-    hooks.sync();
-  });
 }
 
 // Route voor één dag: tickets per klant samengevoegd, volgorde geoptimaliseerd, spoed eerst waar mogelijk.
@@ -480,11 +431,6 @@ viewService.after = (params) => {
     hooks.render();
     hooks.sync();
   });
-  $('#newStock')?.addEventListener('click', () => stockDialog());
-  $('#seedStock')?.addEventListener('click', () => { seedStock(); hooks.render(); hooks.sync(); });
-  $$('[data-stock]').forEach((el) => el.addEventListener('click', () => stockDialog(store.get().stock.find((x) => x.id === el.dataset.stock))));
-  $$('[data-inc]').forEach((b) => b.addEventListener('click', () => { adjustStock(b.dataset.inc, 1, 'Aangevuld'); hooks.render(); hooks.sync(); }));
-  $$('[data-dec]').forEach((b) => b.addEventListener('click', () => { adjustStock(b.dataset.dec, -1, 'Handmatig afgeboekt'); hooks.render(); hooks.sync(); }));
   const dateEl = $('#routeDate');
   dateEl?.addEventListener('change', () => { location.hash = `#/service?tab=route&d=${dateEl.value}`; });
   $$('[data-close]').forEach((b) => b.addEventListener('click', () => closeTicketDialog(store.get().tickets.find((t) => t.id === b.dataset.close))));
