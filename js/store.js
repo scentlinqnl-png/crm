@@ -27,6 +27,9 @@ export const DEFAULT_SETTINGS = {
   ],
   bedrijf: { naam: 'Scentlinq Pro Benelux', adres: '', telefoon: '', email: '', kvk: '' },
   monteur: '',            // naam op het servicerapport (per apparaat)
+  helpdeskWhatsapp: '',   // bv. 31612345678: meldingen via QR-sticker gaan naar dit nummer
+  helpdeskEmail: '',
+  publiekeUrl: '',        // adres van de app (voor de QR-links); leeg = huidig adres
   voorraadLocaties: ['Magazijn', 'Bus'],
   mijnLocatie: 'Bus',     // voorraadlocatie van dit apparaat (verbruik bij tickets)
   autoOnderhoud: true,    // onderhoudstickets automatisch aanmaken voor systemen met een interval

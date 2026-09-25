@@ -11,6 +11,8 @@ import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
 import { seedStock, migrateStock, lowStock } from './stock.js';
 import { viewVoorraad } from './voorraad.js';
+import { intakeDialog } from './service.js';
+import { downloadStickers } from './report.js';
 import { calcQuote, saveQuote, setQuoteStatus, acceptQuote, QUOTE_STATUS, LEASE_MND } from './quotes.js';
 import { shareOrDownloadQuote } from './report.js';
 import { viewImport } from './import.js';
@@ -1035,8 +1037,15 @@ function viewMeer() {
           <label>Voorraadlocaties (komma-gescheiden, eerste = magazijn)<input name="voorraadLocaties" value="${h(s.settings.voorraadLocaties.join(', '))}"></label>
           <label>Locatie van dit apparaat<select name="mijnLocatie">${s.settings.voorraadLocaties.map((l) => `<option ${l === s.settings.mijnLocatie ? 'selected' : ''}>${h(l)}</option>`).join('')}</select></label>
         </div>
+        <h3>Meldingen van klanten (QR-stickers)</h3>
+        <div class="row2">
+          <label>Helpdesk WhatsApp (internationaal, bv. 31612345678)<input name="helpdeskWhatsapp" inputmode="numeric" value="${h(s.settings.helpdeskWhatsapp)}"></label>
+          <label>Helpdesk e-mail<input name="helpdeskEmail" type="email" value="${h(s.settings.helpdeskEmail)}"></label>
+        </div>
+        <label>Adres van de app (voor de QR-links)<input name="publiekeUrl" type="url" value="${h(s.settings.publiekeUrl)}" placeholder="https://scentlinqnl-png.github.io/crm/"></label>
+        <p class="muted small">Stickers maak je per klant bij Geplaatste systemen, of hieronder voor alle systemen tegelijk. Maak stickers pas als de app op zijn vaste adres staat, anders verwijzen de codes naar deze pagina.</p>
         <label class="inline"><input type="checkbox" name="autoOnderhoud" ${s.settings.autoOnderhoud ? 'checked' : ''}> Onderhoudstickets automatisch aanmaken (${h(s.settings.onderhoudVooruit)} dagen vooruit)</label>
-        <div class="actions left"><button class="btn primary">Opslaan</button></div>
+        <div class="actions left"><button class="btn primary">Opslaan</button><button type="button" class="btn" id="allStickers">🏷️ Stickers alle systemen</button></div>
       </form>
     </section>
 
@@ -1159,8 +1168,16 @@ viewMeer.after = async () => {
       if (locs.length) s.settings.voorraadLocaties = locs;
       s.settings.mijnLocatie = locs.includes(d.mijnLocatie) ? d.mijnLocatie : locs[locs.length - 1];
       s.settings.autoOnderhoud = !!d.autoOnderhoud;
+      s.settings.helpdeskWhatsapp = d.helpdeskWhatsapp.replace(/[^\d]/g, '');
+      s.settings.helpdeskEmail = d.helpdeskEmail.trim();
+      s.settings.publiekeUrl = d.publiekeUrl.trim();
     });
     toast('Opgeslagen');
+  });
+  $('#allStickers')?.addEventListener('click', async () => {
+    const list = store.get().assets.filter((a) => !a.deleted && a.status !== 'verwijderd');
+    if (!list.length) return toast('Nog geen systemen geregistreerd.');
+    try { await downloadStickers(list, 'QR-stickers alle systemen'); toast(`${list.length} stickers gemaakt`); } catch (e) { toast('PDF maken mislukt: ' + e.message, 5000); }
   });
   $('#claudeForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1445,6 +1462,15 @@ if (store.get().settings.autoOnderhoud && store.get().assets.length) {
 }
 migrateStock();
 hooks.render = render;
+// Android: bericht gedeeld naar de app (Web Share Target) → meteen een ticket maken.
+{
+  const q = new URLSearchParams(location.search);
+  const shared = [q.get('title'), q.get('text'), q.get('url')].filter(Boolean).join('\n');
+  if (shared) {
+    history.replaceState(null, '', location.pathname + '#/service');
+    setTimeout(() => intakeDialog(shared), 300);
+  }
+}
 hooks.sync = () => runSync({ quiet: true });
 window.addEventListener('hashchange', render);
 // Voorbeeldweergave: laad voorbeeldgegevens bij een lege app, of ververs oudere voorbeeldgegevens zonder service/CRM.

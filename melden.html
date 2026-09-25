@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Melding doen</title>
+  <meta name="theme-color" content="#0d0d0f">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="melden">
+  <main id="meld" class="meld-page">
+    <header class="meld-head"><img src="icons/icon.svg" alt="" width="40" height="40"><div><h1 id="bedrijf">Melding doen</h1><p class="muted small">Storing, geur op of een vraag over uw geursysteem</p></div></header>
+    <section class="card" id="machine" hidden></section>
+    <form class="card form" id="meldForm">
+      <h2>Wat is er aan de hand?</h2>
+      <div class="chips-radio big">
+        <label><input type="radio" name="t" value="navulling" required><span>🧴 Geur is op</span></label>
+        <label><input type="radio" name="t" value="storing"><span>⚠️ Storing</span></label>
+        <label><input type="radio" name="t" value="onderhoud"><span>🔧 Onderhoud</span></label>
+        <label><input type="radio" name="t" value="vraag"><span>💬 Vraag</span></label>
+      </div>
+      <label>Toelichting<textarea name="o" rows="3" placeholder="bijv. het apparaat maakt geen geur meer sinds gisteren"></textarea></label>
+      <div class="row2">
+        <label>Uw naam<input name="naam" autocomplete="name"></label>
+        <label>Telefoon<input name="tel" type="tel" autocomplete="tel"></label>
+      </div>
+      <div class="actions left" id="sendBtns"></div>
+      <p class="muted small" id="hint"></p>
+    </form>
+  </main>
+  <script type="module" src="js/melden.js"></script>
+</body>
+</html>

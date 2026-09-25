@@ -7,6 +7,8 @@ import {
 import { $, $$, h, eur, ml, fmtDate, toast, openDialog, telHref, hooks } from './ui.js';
 import { ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { quotesFor, QUOTE_STATUS } from './quotes.js';
+import { qrSvg, meldUrl } from './qr.js';
+import { downloadStickers } from './report.js';
 
 const done = (msg) => { toast(msg); hooks.render(); hooks.sync(); };
 
@@ -94,13 +96,15 @@ export function assetDialog(nr, pre = {}) {
       <label>Status<select name="status">${['gepland', 'actief', 'proef', 'defect', 'verwijderd'].map((x) => `<option ${a.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     </div>
     <label>Onderhoud elke<select name="interval">${[['', 'geen vast schema'], ['3', '3 maanden'], ['6', '6 maanden'], ['12', '12 maanden']].map(([v, l]) => `<option value="${v}" ${String(a.interval || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${a.id ? `<details class="qr-box"><summary>QR-code voor meldingen</summary><div class="qr-wrap">${qrSvg(meldUrl(a), 150)}<div><p class="muted small">Klanten scannen deze code om een storing of lege geur te melden via WhatsApp of e-mail.</p><a class="btn small" href="${h(meldUrl(a))}" target="_blank" rel="noopener">Meldpagina openen</a></div></div></details>` : ''}
     <div class="actions">
-      ${a.id ? '<button value="ticket" class="btn ghost" formnovalidate>+ Ticket</button><button value="delete" class="btn ghost danger" formnovalidate>Verwijderen</button>' : ''}
+      ${a.id ? '<button value="sticker" class="btn ghost" formnovalidate>🏷️ Sticker</button><button value="ticket" class="btn ghost" formnovalidate>+ Ticket</button><button value="delete" class="btn ghost danger" formnovalidate>Verwijderen</button>' : ''}
       <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
       <button value="save" class="btn primary">Opslaan</button>
     </div>`, (d, action) => {
     if (action === 'delete') { softDelete('assets', a.id); return done('Systeem verwijderd'); }
     if (action === 'ticket') return ticketDialog({ nr, assetId: a.id });
+    if (action === 'sticker') return downloadStickers([a], `QR-sticker ${a.serienummer || a.systeem}`).then(() => toast('Sticker gemaakt')).catch((e) => toast('PDF maken mislukt: ' + e.message, 5000));
     upsert('assets', { id: a.id, nr: Number(nr), ...d, interval: Number(d.interval) || null });
     done('Systeem opgeslagen');
   });
@@ -161,7 +165,7 @@ export function klantCrmSections(nr) {
     </section>
 
     <section class="card">
-      <div class="card-head"><h2>Geplaatste systemen</h2><button class="btn small" id="newAsset">+ Systeem</button></div>
+      <div class="card-head"><h2>Geplaatste systemen</h2><div class="head-btns">${assets.length ? '<button class="btn small" id="stickers">🏷️ Stickers</button>' : ''}<button class="btn small" id="newAsset">+ Systeem</button></div></div>
       <ul class="list compact">${assets.map((a) => `<li class="clickable" data-asset="${h(a.id)}"><div><b>${h(a.systeem)}</b>${a.locatie ? ` · ${h(a.locatie)}` : ''}<span class="sub">${a.serienummer ? `SN ${h(a.serienummer)} · ` : ''}geplaatst ${fmtDate(a.geplaatst)}${a.laatsteOnderhoud ? ` · onderhoud ${fmtDate(a.laatsteOnderhoud)}` : ''}${a.interval ? ` · elke ${h(a.interval)} mnd` : ''}${a.geur ? ` · ${h(a.geur)}` : ''}</span></div><span class="badge ${a.status === 'defect' ? 'k-weinig' : a.status === 'actief' ? 'k-normaal' : ''}">${h(a.status)}</span></li>`).join('') || '<li class="muted">Nog geen systemen geregistreerd.</li>'}</ul>
     </section>
 
@@ -178,6 +182,9 @@ export function bindKlantCrm(nr) {
   $('#newContact')?.addEventListener('click', () => contactDialog(nr));
   $('#newContract')?.addEventListener('click', () => contractDialog(nr));
   $('#newAsset')?.addEventListener('click', () => assetDialog(nr));
+  $('#stickers')?.addEventListener('click', async () => {
+    try { await downloadStickers(assetsFor(nr), `QR-stickers ${customer(nr)?.naam || nr}`); toast('Stickervel gemaakt (A4, 3 × 7 etiketten)'); } catch (e) { toast('PDF maken mislukt: ' + e.message, 5000); }
+  });
   $('#newTicketK')?.addEventListener('click', () => ticketDialog({ nr }));
   $$('[data-contact]').forEach((el) => el.addEventListener('click', (e) => { if (!e.target.closest('a')) contactDialog(nr, s.contacts.find((x) => x.id === el.dataset.contact)); }));
   $$('[data-contract]').forEach((el) => el.addEventListener('click', () => contractDialog(nr, s.contracts.find((x) => x.id === el.dataset.contract))));

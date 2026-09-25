@@ -305,3 +305,46 @@ export async function shareOrDownloadOrder(o) {
   await download(name, blob);
   return 'gedownload';
 }
+
+// ---------- QR-stickers (A4, 3 × 7 etiketten van 63,5 × 38,1 mm, bv. Avery L7160) ----------
+
+export async function buildStickersPdf(assets) {
+  const JsPDF = await loadJsPDF();
+  const { qrMatrix, meldUrl } = await import('./qr.js');
+  const s = store.get();
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const [cols, rows, w, hh, left, top, gapX] = [3, 7, 63.5, 38.1, 7.2, 15.1, 2.5];
+  assets.forEach((a, i) => {
+    const slot = i % (cols * rows);
+    if (i && slot === 0) doc.addPage();
+    const x = left + (slot % cols) * (w + gapX);
+    const y = top + Math.floor(slot / cols) * hh;
+    const { n, dark } = qrMatrix(meldUrl(a));
+    const qs = 28;
+    const cell = qs / n;
+    doc.setFillColor(0, 0, 0);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (dark(r, c)) doc.rect(x + 3 + c * cell, y + 5 + r * cell, cell + 0.02, cell + 0.02, 'F');
+    const tx = x + 3 + qs + 2.5;
+    const tw = w - qs - 7.5;
+    let ty = y + 7;
+    const put = (text, size, style, color, gap = 0.4, max = 2) => {
+      doc.setFont('helvetica', style).setFontSize(size).setTextColor(...color);
+      const lines = doc.splitTextToSize(text, tw).slice(0, max);
+      doc.text(lines, tx, ty);
+      ty += lines.length * size * 0.3528 * 1.15 + gap;
+    };
+    put('Geur op of storing?', 8.5, 'bold', [20, 20, 20], 0.6);
+    put('Scan de code en meld het direct.', 7, 'normal', [60, 60, 60], 1.6);
+    if (a.systeem) put(a.systeem, 6.5, 'normal', [90, 90, 90], 0, 1);
+    if (a.serienummer) put(`SN ${a.serienummer}`, 6.5, 'normal', [90, 90, 90], 0, 1);
+    if (customer(a.nr)?.naam) put(customer(a.nr).naam, 6.5, 'normal', [90, 90, 90], 0, 2);
+    if (s.settings.helpdeskWhatsapp) put(`WhatsApp +${s.settings.helpdeskWhatsapp}`, 6.5, 'normal', [90, 90, 90], 0, 1);
+    doc.setFont('helvetica', 'bold').setFontSize(6.5).setTextColor(176, 138, 62).text(doc.splitTextToSize(s.settings.bedrijf?.naam || 'Scentlinq Pro', tw)[0], tx, y + hh - 3.5);
+  });
+  return doc.output('blob');
+}
+
+export async function downloadStickers(assets, naam = 'QR-stickers') {
+  const blob = await buildStickersPdf(assets);
+  await download(`${naam}.pdf`, blob);
+}

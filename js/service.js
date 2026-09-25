@@ -9,6 +9,7 @@ import { putBlob, getBlob, deleteBlob, compressImage, signaturePad } from './med
 import { shareOrDownloadReport } from './report.js';
 import { activatePlannedAssets } from './quotes.js';
 import { planServiceWithClaude, claudeReady } from './claude.js';
+import { parseMelding } from './intake.js';
 import { consumeStock, activeStock, materialText, qty, mijnLocatie } from './stock.js';
 import { $, $$, h, fmtDate, toast, weekStart, openDialog, klantOptions, hooks } from './ui.js';
 
@@ -137,6 +138,26 @@ function photoPicker(root, initial = []) {
 
 const photoField = `<div class="photos"><div class="photo-grid"></div><label class="btn small">📷 Foto toevoegen<input type="file" accept="image/*" capture="environment" multiple hidden></label></div>`;
 
+// Melding van buiten (WhatsApp, e-mail, gedeeld of geplakt) omzetten naar een ingevuld ticket.
+export function intakeDialog(text = '') {
+  const form = openDialog(`
+    <h2>📥 Melding verwerken</h2>
+    <p class="muted small">Plak een WhatsApp-bericht of e-mail van een klant. De app herkent klant, systeem en soort melding; daarna controleer je het ticket.</p>
+    <label>Bericht<textarea name="tekst" rows="7" required placeholder="Plak hier het bericht…">${h(text)}</textarea></label>
+    <div class="actions">
+      <button type="button" class="btn ghost" id="pasteBtn">Plakken</button>
+      <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
+      <button value="ok" class="btn primary">Ticket maken</button>
+    </div>`, (d) => {
+    const f = parseMelding(d.tekst, store.get());
+    ticketDialog({ ...f, gemeld: todayISO(), duur: TICKET_DUUR[f.type] });
+    if (!f.nr) setTimeout(() => toast('Klant niet herkend: kies de klant in het ticket.', 4000), 200);
+  });
+  $('#pasteBtn', form).addEventListener('click', async () => {
+    try { form.tekst.value = await navigator.clipboard.readText(); } catch { form.tekst.focus(); toast('Plakken met lang indrukken of Ctrl+V'); }
+  });
+}
+
 export function closeTicketDialog(t) {
   const s0 = store.get();
   const st = statFor(stats(), t.nr);
@@ -255,7 +276,7 @@ function tabsNav(active, extra = '') {
 export function viewService(params) {
   const tab = params.get('tab') || 'tickets';
   const body = tab === 'agenda' ? agenda(params) : tab === 'route' ? route(params) : tickets();
-  return `<div class="card-head"><h1>Service</h1><button class="btn primary small" id="newTicket">+ Ticket</button></div>${tabsNav(tab)}${body}`;
+  return `<div class="card-head"><h1>Service</h1><div class="head-btns"><button class="btn small" id="intake">📥 Melding</button><button class="btn primary small" id="newTicket">+ Ticket</button></div></div>${tabsNav(tab)}${body}`;
 }
 
 function tickets() {
@@ -410,6 +431,7 @@ viewService.after = (params) => {
   const tab = params.get('tab') || 'tickets';
   $('#newTicket')?.addEventListener('click', () => ticketDialog({ datum: tab === 'route' ? params.get('d') || todayISO() : '' }));
   bindTicketList();
+  $('#intake')?.addEventListener('click', () => intakeDialog());
   $('#tStatus')?.addEventListener('change', (e) => { ticketFilter.status = e.target.value; hooks.render(); });
   $('#tType')?.addEventListener('change', (e) => { ticketFilter.type = e.target.value; hooks.render(); });
   $('#mkMaint')?.addEventListener('click', () => {

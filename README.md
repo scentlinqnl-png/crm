@@ -69,6 +69,22 @@ Tabblad **Service** (voor het Helpdesk-team):
   van de duur per ticket. Open in Google Maps, zet de tijden terug in de tickets, markeer "onderweg" en rond af.
   Bij afronden van een navulling/onderhoud leg je meteen het verbruik vast; het onderhoud van het systeem wordt bijgewerkt.
 
+## Meldingen van klanten (zonder server of Microsoft)
+
+1. **QR-sticker op elke machine**: klantkaart › Geplaatste systemen › 🏷️ Stickers (of Meer › Stickers alle systemen).
+   PDF voor A4-etiketvellen van 3 × 7 (63,5 × 38,1 mm, bv. Avery L7160).
+2. **Meldpagina** (`melden.html`): de klant scant de sticker, ziet zijn systeem en serienummer, kiest
+   *Geur is op / Storing / Onderhoud / Vraag* en verstuurt de melding via **WhatsApp** of **e-mail** naar de helpdesk.
+   Alle gegevens zitten in de QR-link; er is geen account, database of server nodig.
+3. **Ticket maken**:
+   - Android: deel het WhatsApp-bericht of de mail naar de geïnstalleerde app (*Delen → Klantkaart*);
+   - overal: Service › 📥 Melding › plakken.
+   De app herkent klant, systeem, soort en prioriteit (de vaste regel `[SLQ sn=… k=… t=…]` onderaan het bericht,
+   of anders serienummer, telefoonnummer, e-mail of klantnaam en woorden als "geur op", "storing", "spoed").
+
+Instellen onder Meer › Service: helpdesknummer voor WhatsApp, helpdesk-e-mail en het vaste adres van de app
+(bv. `https://scentlinqnl-png.github.io/crm/`). Maak de stickers pas als de app op dat adres staat.
+
 ## Uitgebreide CRM
 
 Op de klantkaart:
@@ -188,6 +204,7 @@ python3 -m http.server 8080
 | `js/service.js` | Tickets, service-agenda en helpdeskroute |
 | `js/media.js`, `js/report.js` | Foto's/handtekening (IndexedDB) en PDF-rapporten (jsPDF) |
 | `js/quotes.js`, `js/import.js` | Offertes en CSV/Excel-import |
+| `melden.html`, `js/melden.js`, `js/intake.js`, `js/qr.js` | Meldpagina voor klanten, herkennen van meldingen, QR-codes |
 | `js/stock.js`, `js/voorraad.js` | Voorraadbeheer: logica en scherm |
 | `js/crm.js` | Contactpersonen, contracten, systemen, klantstatus en rapportage |
 | `js/store.js` | Lokale opslag, parsing van het werkboek, statistieken/classificatie, navulvoorspelling, calculator |
@@ -199,6 +216,6 @@ python3 -m http.server 8080
 | `js/geo.js` | Coördinaten per plaats via OpenStreetMap Nominatim, voor betere routes |
 | `sw.js`, `manifest.webmanifest`, `icons/` | PWA: offline cache en installatie |
 | `teams/` | Teams-app manifest en iconen |
-| `vendor/` | SheetJS 0.18.5, Microsoft Teams JS SDK 2.x de Anthropic TypeScript SDK 0.128.0 (gebundeld voor de browser) en jsPDF 4.2.1 |
+| `vendor/` | SheetJS 0.18.5, Microsoft Teams JS SDK 2.x de Anthropic TypeScript SDK 0.128.0 (gebundeld voor de browser) jsPDF 4.2.1 en qrcode-generator 2.0.4 |
 
 Na het wijzigen van bestanden: verhoog `CACHE` in `sw.js`, zodat geïnstalleerde apps de nieuwe versie ophalen.
