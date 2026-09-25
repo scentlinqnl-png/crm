@@ -1416,6 +1416,8 @@ function render() {
   const [re, fn, tab, usesParams] = found;
   const arg = usesParams ? params : path.match(re)?.[1];
   const scrollY = lastRoute === location.hash ? window.scrollY : 0;
+  // Op brede schermen tonen deze overzichten hun kaarten in twee kolommen (alleen via CSS min-width).
+  view.classList.toggle('wide-grid', [viewVandaag, viewKlant, viewRapport, viewMeer].includes(fn));
   view.innerHTML = fn(arg);
   fn.after?.(arg);
   $$('[data-demo]', view).forEach((b) => b.addEventListener('click', startDemo));
