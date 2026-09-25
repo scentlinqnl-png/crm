@@ -1,8 +1,8 @@
 // Service worker: app-shell offline beschikbaar. Microsoft/Graph/OSM-verkeer gaat altijd naar het netwerk.
-const CACHE = 'klantkaart-v15';
+const CACHE = 'klantkaart-v16';
 const SHELL = [
   './', 'index.html', 'auth.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/store.js', 'js/planner.js', 'js/graph.js', 'js/excel.js', 'js/geo.js', 'js/demo.js', 'js/claude.js', 'js/ui.js', 'js/service.js', 'js/crm.js', 'js/media.js', 'js/report.js', 'js/stock.js', 'js/quotes.js', 'js/import.js', 'js/voorraad.js', 'js/intake.js', 'js/qr.js', 'js/melden.js', 'melden.html', 'js/auth-page.js',
+  'js/app.js', 'js/store.js', 'js/planner.js', 'js/graph.js', 'js/excel.js', 'js/geo.js', 'js/demo.js', 'js/claude.js', 'js/ui.js', 'js/service.js', 'js/crm.js', 'js/media.js', 'js/report.js', 'js/stock.js', 'js/quotes.js', 'js/import.js', 'js/voorraad.js', 'js/intake.js', 'js/qr.js', 'js/melden.js', 'melden.html', 'js/auth-page.js', 'js/sync.js',
   'vendor/xlsx.full.min.js', 'vendor/MicrosoftTeams.min.js', 'vendor/anthropic-sdk.mjs', 'vendor/jspdf.umd.min.js', 'vendor/qrcode.mjs',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
@@ -21,6 +21,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.includes('/api/')) return; // gedeelde database altijd via het netwerk
   if (url.pathname.endsWith('/auth.html') && url.search) return; // aanmeld-callback nooit uit cache
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {

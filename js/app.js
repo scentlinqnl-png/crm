@@ -6,6 +6,7 @@ import {
 } from './store.js';
 import { planDay, mapsRouteUrl, mapsRouteUrls, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
+import * as db from './sync.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
@@ -53,6 +54,15 @@ function renderSyncChip() {
   const btn = $('#syncBtn');
   const p = pendingCount();
   btn.hidden = false;
+  if (db.isSignedIn() && !m365.isSignedIn()) {
+    const st = db.getStatus();
+    btn.classList.toggle('warn', !!st.error || st.pending > 0);
+    if (st.syncing) btn.textContent = '⟳ Synchroniseren…';
+    else if (!navigator.onLine) btn.textContent = `Offline${st.pending ? ` · ${st.pending} wachtend` : ''}`;
+    else if (st.error) btn.textContent = '⚠︎ Niet gesynct';
+    else btn.textContent = st.pending ? `⟳ ${st.pending} te syncen` : '✓ Gedeeld';
+    return;
+  }
   if (!excelMode()) {
     btn.classList.remove('warn');
     btn.textContent = 'Op dit apparaat';
@@ -81,6 +91,22 @@ async function runSync({ quiet = false } = {}) {
   }
 }
 
+async function dbSyncNow() {
+  try {
+    const n = await db.syncNow();
+    toast(n ? `${n} wijziging(en) van collega's binnengehaald` : 'Alles is gesynchroniseerd');
+  } catch (e) {
+    toast('Synchroniseren mislukt: ' + e.message, 5000);
+  }
+}
+
+// Binnengekomen wijzigingen tonen, maar niet midden in een formulier of dialoog.
+function renderIfIdle() {
+  const a = document.activeElement;
+  if (dialog.open || (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName) && view.contains(a))) return;
+  render();
+}
+
 // ---------- thema (per apparaat onthouden) ----------
 
 function applyTheme(theme) {
@@ -103,6 +129,7 @@ $('#themeBtn')?.addEventListener('click', () => {
 
 $('#syncBtn').addEventListener('click', () => {
   if (m365.isSignedIn()) runSync();
+  else if (db.isSignedIn()) dbSyncNow();
   else location.hash = '#/meer';
 });
 window.addEventListener('online', () => { renderSyncChip(); runSync({ quiet: true }); });
@@ -971,6 +998,47 @@ let persisted = null;
 navigator.storage?.persist?.().then((ok) => { persisted = ok; }).catch(() => {});
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
 
+function dbSection() {
+  if (!db.isSignedIn()) {
+    return `
+    <section class="card form">
+      <h2>Gedeelde database</h2>
+      <p class="muted small">Meld je aan om klanten, bezoeken, deals en service te delen met collega's via de server van deze app. Je kunt offline blijven werken; wijzigingen gaan mee zodra je weer online bent.</p>
+      <form id="dbLogin">
+        <label>Gebruikersnaam<input name="username" autocomplete="username" required></label>
+        <label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label>
+        <div class="actions left"><button class="btn primary">Aanmelden</button></div>
+      </form>
+    </section>`;
+  }
+  if (db.needsFirstSync()) {
+    return `
+    <section class="card">
+      <h2>Gedeelde database</h2>
+      <p>Aangemeld als <b>${h(db.user())}</b>. Wat moet er met de gegevens op dit apparaat gebeuren?</p>
+      <div class="actions left">
+        <button class="btn primary" id="dbReplace">Gegevens van de server gebruiken</button>
+        <button class="btn" id="dbMerge">Samenvoegen met de server</button>
+        <button class="btn ghost" id="dbLogout">Afmelden</button>
+      </div>
+      <p class="muted small"><b>Gegevens van de server gebruiken</b>: wat op dit apparaat staat wordt vervangen (maak eerst een back-up als je twijfelt). <b>Samenvoegen</b>: alles van dit apparaat gaat ook naar de server; bij hetzelfde klantnummer wint de server.</p>
+    </section>`;
+  }
+  const st = db.getStatus();
+  return `
+    <section class="card">
+      <h2>Gedeelde database</h2>
+      <p>Aangemeld als <b>${h(db.user())}</b>. ${st.syncing ? 'Bezig met synchroniseren…' : st.lastSync ? `Laatst gesynchroniseerd om ${st.lastSync.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}.` : ''}
+      ${st.pending ? `<br><span class="muted small">${st.pending} wijziging(en) wachten op verzending.</span>` : ''}
+      ${st.error ? `<br><span class="late small">${h(st.error)}</span>` : ''}</p>
+      <div class="actions left">
+        <button class="btn primary" id="dbSync">⟳ Nu synchroniseren</button>
+        <button class="btn ghost" id="dbLogout">Afmelden</button>
+      </div>
+      <p class="muted small">Foto's en handtekeningen blijven op dit apparaat en gaan niet mee.</p>
+    </section>`;
+}
+
 function viewMeer() {
   const s = store.get();
   const c = s.settings.m365;
@@ -992,6 +1060,8 @@ function viewMeer() {
       </div>
       <p class="muted small">Maak regelmatig een back-up en bewaar die bijvoorbeeld in OneDrive. Met hetzelfde bestand zet je je gegevens over naar een nieuwe telefoon of computer.</p>
     </section>
+
+    ${dbSection()}
 
     <details class="card optional">
       <summary><b>Gegevens overzetten uit Excel</b> <span class="muted small">(optioneel)</span></summary>
@@ -1111,6 +1181,43 @@ function viewMeer() {
     </section>`;
 }
 viewMeer.after = async () => {
+  $('#dbLogin')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    const btn = $('button', e.target);
+    btn.disabled = true;
+    try {
+      const me = await db.login(d.username.trim(), d.password);
+      const local = store.get().customers.length;
+      if (!local || !me.klanten) {
+        await db.firstSync(local ? 'merge' : 'replace');
+        toast(me.klanten ? `${me.klanten} klanten van de server geladen` : 'Aangemeld · gegevens van dit apparaat staan nu op de server');
+      } else toast('Aangemeld');
+    } catch (err) {
+      toast(err.message, 5000);
+    }
+    render();
+  });
+  for (const [id, mode] of [['#dbReplace', 'replace'], ['#dbMerge', 'merge']]) {
+    $(id)?.addEventListener('click', async (e) => {
+      if (mode === 'replace' && !(await ask('De gegevens op dit apparaat vervangen door die van de server?', 'Vervangen'))) return;
+      e.target.disabled = true;
+      try {
+        await db.firstSync(mode);
+        toast(mode === 'replace' ? 'Gegevens van de server geladen' : 'Samengevoegd');
+      } catch (err) {
+        toast('Mislukt: ' + err.message, 5000);
+      }
+      render();
+    });
+  }
+  $('#dbSync')?.addEventListener('click', async () => { await dbSyncNow(); render(); });
+  $('#dbLogout')?.addEventListener('click', async () => {
+    const p = db.getStatus().pending;
+    if (p && !(await ask(`Er wachten nog ${p} wijziging(en) op verzending. Toch afmelden? Ze blijven op dit apparaat staan.`, 'Afmelden'))) return;
+    await db.logout();
+    render();
+  });
   $('#importFile').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -1219,7 +1326,7 @@ viewMeer.after = async () => {
   });
   $('#install')?.addEventListener('click', async () => { await installPrompt.prompt(); installPrompt = null; render(); });
   $('#reset').addEventListener('click', async () => {
-    if (await ask('Alle lokale gegevens (inclusief niet-gesynchroniseerde bezoeken) wissen?', 'Wissen')) { store.reset(); m365.signOut(); render(); }
+    if (await ask('Alle lokale gegevens (inclusief niet-gesynchroniseerde bezoeken) wissen?', 'Wissen')) { db.signOutLocal(); store.reset(); m365.signOut(); render(); }
   });
   $('#demoBtn')?.addEventListener('click', startDemo);
   if (m365.isSignedIn() && navigator.onLine) {
@@ -1472,6 +1579,9 @@ hooks.render = render;
   }
 }
 hooks.sync = () => runSync({ quiet: true });
+db.onStatus(() => renderSyncChip());
+db.onReceive(renderIfIdle);
+db.start();
 window.addEventListener('hashchange', render);
 // Voorbeeldweergave: laad voorbeeldgegevens bij een lege app, of ververs oudere voorbeeldgegevens zonder service/CRM.
 if (window.KLANTKAART_DEMO && (!store.get().customers.length || (store.get().source === 'demo' && !store.get().tickets.length))) startDemo();

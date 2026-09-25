@@ -1,0 +1,12 @@
+# one.com / Apache: juiste types en caching voor de PWA
+AddType application/manifest+json .webmanifest
+AddType text/javascript .js .mjs
+
+<FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest)$">
+  Header set Cache-Control "no-cache"
+</FilesMatch>
+
+# Altijd via https
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

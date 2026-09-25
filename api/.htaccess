@@ -1,0 +1,5 @@
+# Alleen index.php en setup.php zijn van buitenaf bereikbaar.
+<FilesMatch "^(lib|config|config\.sample)\.php$">
+  Require all denied
+</FilesMatch>
+Options -Indexes
