@@ -47,6 +47,12 @@ const empty = () => ({
   activities: [],    // {id, nr, type, titel, datum, tijd, notitie, done, updatedAt}
   profiles: [],      // {id: klantnr, nr, sector, keten, contactpersoon, email, geurprofiel, sfeer, m3, circulatie, systeem, aantal, flaconMl, updatedAt}
   pinned: [],        // klantnrs die handmatig in de volgende planning moeten
+  tickets: [],       // {id, code, nr, assetId, type, prioriteit, status, titel, omschrijving, melder, gemeld, datum, tijd, duur, oplossing, gesloten, updatedAt, deleted}
+  ticketSeq: 0,
+  contacts: [],      // {id, nr, naam, functie, telefoon, email, primair, updatedAt, deleted}
+  contracts: [],     // {id, nr, soort, omschrijving, perMaand, eenmalig, start, eind, opzegMnd, status, updatedAt, deleted}
+  assets: [],        // {id, nr, systeem, serienummer, locatie, geplaatst, geur, laatsteOnderhoud, status, updatedAt, deleted}
+  serviceRoutes: {}, // datum -> route (zelfde vorm als een planning)
   settings: structuredClone(DEFAULT_SETTINGS),
   lastSync: null,
   source: null,      // 'import' | 'm365'
@@ -304,7 +310,11 @@ export function mergeById(local, remote) {
 export const CRM_SHEETS = {
   deals: { name: 'CRM_Deals', cols: ['id', 'nr', 'titel', 'fase', 'waarde', 'status', 'gesloten', 'updatedAt', 'deleted'] },
   activities: { name: 'CRM_Activiteiten', cols: ['id', 'nr', 'type', 'titel', 'datum', 'tijd', 'notitie', 'done', 'updatedAt', 'deleted'] },
-  profiles: { name: 'CRM_Klantprofiel', cols: ['id', 'nr', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'm3', 'circulatie', 'systeem', 'aantal', 'flaconMl', 'updatedAt'] },
+  profiles: { name: 'CRM_Klantprofiel', cols: ['id', 'nr', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'm3', 'circulatie', 'systeem', 'aantal', 'flaconMl', 'status', 'labels', 'updatedAt'] },
+  tickets: { name: 'CRM_Tickets', cols: ['id', 'code', 'nr', 'assetId', 'type', 'prioriteit', 'status', 'titel', 'omschrijving', 'melder', 'gemeld', 'datum', 'tijd', 'duur', 'oplossing', 'gesloten', 'updatedAt', 'deleted'] },
+  contacts: { name: 'CRM_Contactpersonen', cols: ['id', 'nr', 'naam', 'functie', 'telefoon', 'email', 'primair', 'updatedAt', 'deleted'] },
+  contracts: { name: 'CRM_Contracten', cols: ['id', 'nr', 'soort', 'omschrijving', 'perMaand', 'eenmalig', 'start', 'eind', 'opzegMnd', 'status', 'updatedAt', 'deleted'] },
+  assets: { name: 'CRM_Systemen', cols: ['id', 'nr', 'systeem', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'status', 'updatedAt', 'deleted'] },
 };
 
 
@@ -314,7 +324,11 @@ function fromRow(cols, row) {
   o.done = o.done === true || o.done === 'TRUE' || o.done === 1;
   o.deleted = o.deleted === true || o.deleted === 'TRUE' || o.deleted === 1;
   if (o.waarde !== undefined) o.waarde = Number(o.waarde) || 0;
-  for (const k of ['m3', 'aantal', 'flaconMl']) if (k in o) o[k] = o[k] === null ? null : Number(o[k]) || null;
+  for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd']) if (k in o) o[k] = o[k] === null ? null : Number(o[k]) || null;
+  if ('primair' in o) o.primair = o.primair === true || o.primair === 'TRUE' || o.primair === 1;
+  for (const k of ['code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
+    if (k in o && o[k] !== null) o[k] = String(o[k]);
+  }
   for (const k of ['id', 'datum', 'tijd', 'gesloten', 'titel', 'notitie', 'type', 'fase', 'status', 'updatedAt', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'circulatie', 'systeem']) {
     if (k in o && o[k] !== null) o[k] = String(o[k]);
   }
@@ -386,4 +400,85 @@ export function refillsDue(withinDays = state.settings.navulDagen) {
     .map((c) => ({ c, f: refillForecast(c.nr) }))
     .filter((x) => x.f && x.f.dagenResterend <= withinDays)
     .sort((a, b) => a.f.leeg.localeCompare(b.f.leeg));
+}
+
+// ---------- service & tickets ----------
+
+export const TICKET_TYPES = {
+  storing: '⚠️ Storing',
+  navulling: '🧴 Navulling',
+  onderhoud: '🔧 Onderhoud',
+  installatie: '📦 Installatie',
+  verwijdering: '📤 Verwijdering',
+  vraag: '💬 Vraag',
+};
+export const TICKET_PRIO = { spoed: 'Spoed', hoog: 'Hoog', normaal: 'Normaal', laag: 'Laag' };
+export const TICKET_STATUS = { nieuw: 'Nieuw', ingepland: 'Ingepland', onderweg: 'Onderweg', opgelost: 'Opgelost', gesloten: 'Gesloten' };
+export const TICKET_DUUR = { storing: 45, navulling: 20, onderhoud: 45, installatie: 90, verwijdering: 30, vraag: 15 };
+const PRIO_ORDER = { spoed: 0, hoog: 1, normaal: 2, laag: 3 };
+
+export const isOpenTicket = (t) => !t.deleted && !['opgelost', 'gesloten'].includes(t.status);
+
+export function openTickets(nr) {
+  return state.tickets
+    .filter((t) => isOpenTicket(t) && (nr === undefined || String(t.nr) === String(nr)))
+    .sort((a, b) => PRIO_ORDER[a.prioriteit] - PRIO_ORDER[b.prioriteit] || (a.datum || '9999').localeCompare(b.datum || '9999') || a.gemeld.localeCompare(b.gemeld));
+}
+
+export function newTicket(fields) {
+  let t;
+  store.update((s) => {
+    s.ticketSeq = (s.ticketSeq || 0) + 1;
+    t = {
+      id: uid(), code: `T-${String(s.ticketSeq).padStart(4, '0')}`, assetId: '', type: 'storing', prioriteit: 'normaal',
+      status: fields.datum ? 'ingepland' : 'nieuw', titel: '', omschrijving: '', melder: '', gemeld: todayISO(), datum: '', tijd: '',
+      duur: TICKET_DUUR[fields.type || 'storing'], oplossing: '', gesloten: '', deleted: false, ...fields, updatedAt: now(),
+    };
+    s.tickets.push(t);
+  });
+  return t;
+}
+
+// Klanten die volgens de voorspelling bijna leeg zijn en nog geen open navulticket hebben.
+export function refillsWithoutTicket() {
+  const withTicket = new Set(state.tickets.filter((t) => isOpenTicket(t) && t.type === 'navulling').map((t) => String(t.nr)));
+  return refillsDue().filter((x) => !withTicket.has(String(x.c.nr)));
+}
+
+// ---------- uitgebreide CRM: contracten, contactpersonen, systemen ----------
+
+export const CONTRACT_SOORTEN = { abonnement: 'Serviceabonnement', lease: 'Lease', koop: 'Koop (eenmalig)', huur: 'Huur' };
+export const KLANT_STATUS = ['Prospect', 'Proefplaatsing', 'Klant', 'Oud-klant'];
+
+export const activeContracts = (nr) => state.contracts.filter((c) => !c.deleted && c.status !== 'beëindigd' && (nr === undefined || String(c.nr) === String(nr)) && (!c.eind || c.eind >= todayISO()));
+export const mrr = (nr) => activeContracts(nr).reduce((t, c) => t + (Number(c.perMaand) || 0), 0);
+
+export function contractsEndingSoon(days = 60) {
+  const today = todayISO();
+  return activeContracts().filter((c) => c.eind && daysBetween(today, c.eind) <= days).sort((a, b) => a.eind.localeCompare(b.eind));
+}
+
+export const contactsFor = (nr) => state.contacts.filter((c) => !c.deleted && String(c.nr) === String(nr)).sort((a, b) => Number(b.primair) - Number(a.primair));
+export const assetsFor = (nr) => state.assets.filter((a) => !a.deleted && String(a.nr) === String(nr));
+
+export function klantStatus(nr) {
+  const p = profile(nr);
+  if (p.status) return p.status;
+  if (activeContracts(nr).length) return 'Klant';
+  return state.visits.some((v) => String(v.nr) === String(nr)) ? 'Klant' : 'Prospect';
+}
+
+export function upsert(collection, item) {
+  store.update((s) => {
+    const list = s[collection];
+    const existing = item.id && list.find((x) => x.id === item.id);
+    if (existing) Object.assign(existing, item, { updatedAt: now() });
+    else list.push({ deleted: false, ...item, id: item.id || uid(), updatedAt: now() });
+  });
+}
+export function softDelete(collection, id) {
+  store.update((s) => {
+    const x = s[collection].find((y) => y.id === id);
+    if (x) { x.deleted = true; x.updatedAt = now(); }
+  });
 }

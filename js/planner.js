@@ -106,7 +106,7 @@ function bestOrder(stops) {
   return { order, travel: cost(order) };
 }
 
-function schedule(order, s, startTijd = s.settings.startTijd) {
+function schedule(order, s, startTijd = s.settings.startTijd, duur = {}) {
   let t = toMin(startTijd);
   let prev = { start: true };
   const stops = [];
@@ -114,7 +114,7 @@ function schedule(order, s, startTijd = s.settings.startTijd) {
     const reis = travelMin(prev, c);
     t += reis;
     const aankomst = t;
-    t += s.settings.bezoekDuur;
+    t += duur[String(c.nr)] ?? s.settings.bezoekDuur;
     stops.push({ nr: c.nr, reis, aankomst: fmtTime(aankomst), vertrek: fmtTime(t) });
     prev = c;
   }
@@ -229,12 +229,12 @@ export function candidateSummary(datum = todayISO()) {
 }
 
 // Maakt een planning van een door Claude (of de gebruiker) gekozen lijst klanten.
-export function planFromSelection({ datum, nrs, redenen = {}, startTijd, toelichting = '', optimize = true, door = 'claude' }) {
+export function planFromSelection({ datum, nrs, redenen = {}, startTijd, toelichting = '', optimize = true, door = 'claude', duur = {} }) {
   const s = store.get();
   const chosen = nrs.map((nr) => s.customers.find((c) => String(c.nr) === String(nr))).filter(Boolean);
   const order = optimize ? bestOrder(chosen).order : chosen;
   const start = /^\d{1,2}:\d{2}$/.test(startTijd || '') ? startTijd : s.settings.startTijd;
-  const sched = schedule(order, s, start);
+  const sched = schedule(order, s, start, duur);
   sched.stops.forEach((stop) => { stop.reden = redenen[String(stop.nr)] || ''; });
   const totaalReis = sched.stops.reduce((t, x) => t + x.reis, 0) + sched.terugReis;
   return {
@@ -245,6 +245,7 @@ export function planFromSelection({ datum, nrs, redenen = {}, startTijd, toelich
     totaalReis,
     teLaat: sched.terug > toMin(s.settings.eindTijd),
     schatting: door === 'claude' ? 'Klanten gekozen door Claude; volgorde en tijden berekend door de app.' : 'Reistijden zijn een schatting, geen exacte route.',
+    duur,
     kandidaten: s.customers.length,
     door,
     toelichting,

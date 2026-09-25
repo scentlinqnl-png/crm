@@ -63,6 +63,40 @@ export function loadDemo() {
       { nr: 5, type: 'demo', titel: 'Proefplaatsing White Tea', datum: dayISO(0), tijd: '14:00' },
       { nr: 11, type: 'email', titel: 'Geurmonsters sturen', datum: dayISO(2), tijd: '' },
     ].map((a) => ({ id: uid(), notitie: '', done: false, deleted: false, updatedAt: now(), ...a }));
+    // Contactpersonen, contracten, geplaatste systemen en tickets (allemaal fictief).
+    const CONTACTS = [[1, 'Sanne de Wit', 'Hotelmanager'], [1, 'Mark Jansen', 'Technische dienst'], [3, 'Peter van Dijk', 'Eigenaar'], [5, 'Dr. L. Bakker', 'Praktijkmanager'], [9, 'Eva Martens', 'Front office'], [15, 'Tom Verhoeven', 'Operations']];
+    s.contacts = CONTACTS.map(([nr, naam, functie], i) => ({ id: uid(), nr, naam, functie, telefoon: '0612345678', email: `${naam.split(' ')[0].toLowerCase().replace(/\W/g, '')}@voorbeeld.nl`, primair: i === 0 || CONTACTS[i - 1][0] !== nr, deleted: false, updatedAt: now() }));
+    const addMonths = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setMonth(d.getMonth() + n); return todayISO(d); };
+    s.contracts = [
+      [1, 'lease', 'Scent HVAC lobby + navulservice', 249, 0, dayISO(-340), 12],
+      [9, 'abonnement', '2× Scent Medium + navulservice', 138, 1790, dayISO(-200), 24],
+      [15, 'abonnement', 'Scent Pro restaurant', 129, 1895, dayISO(-700), 24],
+      [2, 'abonnement', 'Scent Compact + geurpatronen', 39, 395, dayISO(-120), 12],
+      [8, 'huur', 'Scent Medium wellness', 89, 0, dayISO(-60), 36],
+      [6, 'abonnement', 'Showroom 2× Scent Pro', 258, 3790, dayISO(-330), 12],
+    ].map(([nr, soort, omschrijving, perMaand, eenmalig, start, mnd]) => ({ id: uid(), nr, soort, omschrijving, perMaand, eenmalig, start, eind: addMonths(start, mnd), opzegMnd: 1, status: 'actief', deleted: false, updatedAt: now() }));
+    s.assets = [
+      [1, 'Scent HVAC', 'Lobby'], [9, 'Scent Medium', 'Receptie'], [9, 'Scent Medium', 'Ontbijtzaal'], [15, 'Scent Pro', 'Restaurant'],
+      [2, 'Scent Compact', 'Cabines'], [8, 'Scent Medium', 'Spa'], [6, 'Scent Pro', 'Showroom'], [6, 'Scent Pro', 'Werkplaats-ontvangst'],
+    ].map(([nr, systeem, locatie], i) => ({ id: uid(), nr, systeem, serienummer: `SLQ-${2400 + i * 17}`, locatie, geplaatst: dayISO(-300 + i * 20), geur: GEUREN[nr % GEUREN.length], laatsteOnderhoud: dayISO(-40 - i * 9), status: i === 3 ? 'defect' : 'actief', deleted: false, updatedAt: now() }));
+    const T = [
+      [15, 3, 'storing', 'spoed', 'Machine verneveld niet meer', 0],
+      [9, 1, 'onderhoud', 'normaal', 'Halfjaarlijks onderhoud receptie', 0],
+      [6, 6, 'navulling', 'normaal', 'Patronen vervangen showroom', 0],
+      [2, 4, 'vraag', 'laag', 'Andere geur voor cabines?', 1],
+      [8, 5, 'storing', 'hoog', 'Timer loopt niet goed', 2],
+      [1, 0, 'onderhoud', 'normaal', 'Filter HVAC-unit vervangen', null],
+      [14, null, 'installatie', 'normaal', 'Proefplaatsing lounge', null],
+    ];
+    s.tickets = T.map(([nr, ai, type, prioriteit, titel, dag], i) => ({
+      id: uid(), code: `T-${String(i + 1).padStart(4, '0')}`, nr, assetId: ai === null ? '' : s.assets[ai].id, type, prioriteit,
+      status: dag === null ? 'nieuw' : 'ingepland', titel, omschrijving: '', melder: s.contacts.find((c) => c.nr === nr)?.naam || '', gemeld: dayISO(-2 - i),
+      datum: dag === null ? '' : dayISO(dag), tijd: '', duur: { storing: 45, navulling: 20, onderhoud: 45, installatie: 90, vraag: 15 }[type], oplossing: '', gesloten: '', deleted: false, updatedAt: now(),
+    }));
+    s.tickets.push({ id: uid(), code: 'T-0008', nr: 1, assetId: s.assets[0].id, type: 'storing', prioriteit: 'hoog', status: 'opgelost', titel: 'Lekkage bij aansluiting', omschrijving: '', melder: 'Mark Jansen', gemeld: dayISO(-12), datum: dayISO(-11), tijd: '10:00', duur: 45, oplossing: 'Koppeling vervangen en getest.', gesloten: dayISO(-11), deleted: false, updatedAt: now() });
+    s.ticketSeq = 8;
+    s.profiles.forEach((p) => { if ([1, 2, 6, 8, 9, 15].includes(Number(p.nr))) p.status = 'Klant'; });
+    s.serviceRoutes = {};
     s.plans = {};
     s.pinned = [];
     s.source = 'demo';

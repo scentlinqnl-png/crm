@@ -34,7 +34,12 @@ export function verbruikTSV(visits) {
     .join('\n');
 }
 
-function download(name, blob) {
+async function download(name, blob) {
+  // Op claude.ai (voorbeeldweergave) lopen downloads via de pagina zelf.
+  if (typeof window.claude?.use === 'function') {
+    const dl = await window.claude.use('downloads').catch(() => null);
+    if (dl) { await dl.save({ filename: name, data: blob }).catch(() => {}); return; }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -84,3 +89,29 @@ export function exportMyMaps(plan) {
   const csv = '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
   download(`Dagplanning_MyMaps_${plan.datum}.csv`, new Blob([csv], { type: 'text/csv;charset=utf-8' }));
 }
+
+// ---------- standalone back-up (JSON, geen Excel nodig) ----------
+
+const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'settings'];
+
+export function exportJsonBackup() {
+  const s = store.get();
+  const data = { app: 'klantkaart', versie: 1, gemaakt: new Date().toISOString(), ...Object.fromEntries(BACKUP_KEYS.map((k) => [k, s[k]])) };
+  // Microsoft- en Claude-sleutels horen niet in een back-upbestand.
+  data.settings = { ...data.settings, m365: { ...data.settings.m365, clientId: '' } };
+  download(`Klantkaart-backup-${todayStamp()}.json`, new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  store.update((st) => { st.lastBackup = new Date().toISOString(); });
+}
+
+export async function restoreJsonBackup(file) {
+  const data = JSON.parse(await file.text());
+  if (data.app !== 'klantkaart' || !Array.isArray(data.customers)) throw new Error('Dit is geen Klantkaart-back-up.');
+  store.update((s) => {
+    for (const k of BACKUP_KEYS) if (data[k] !== undefined) s[k] = k === 'settings' ? { ...s.settings, ...data.settings, m365: s.settings.m365 } : data[k];
+    s.source = 'app';
+    s.lastBackup = data.gemaakt || null;
+  });
+  return { klanten: data.customers.length, bezoeken: (data.visits || []).length };
+}
+
+const todayStamp = () => new Date().toISOString().slice(0, 10);

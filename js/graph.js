@@ -229,7 +229,11 @@ async function syncCrm(base) {
     const rows = await usedValues(base, def.name);
     const remote = crmFromRows(key, rows);
     const merged = mergeById(store.get()[key], remote);
-    store.update((s) => { s[key] = merged; });
+    store.update((s) => {
+      s[key] = merged;
+      // Ticketnummers blijven uniek over apparaten heen.
+      if (key === 'tickets') s.ticketSeq = Math.max(s.ticketSeq || 0, ...merged.map((t) => parseInt(String(t.code || '').slice(2), 10) || 0));
+    });
     const values = [def.cols, ...merged.map((o) => def.cols.map((c) => (o[c] === null || o[c] === undefined ? '' : o[c])))];
     const addr = `A1:${colLetter(def.cols.length)}${values.length}`;
     // Datum/tijd als tekst bewaren zodat Excel ze niet omzet.

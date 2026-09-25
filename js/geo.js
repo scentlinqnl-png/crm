@@ -34,3 +34,31 @@ export async function geocodePlaces(onProgress) {
   }
   return todo.length;
 }
+
+async function geocode(plaats) {
+  const key = norm(plaats);
+  const s = store.get();
+  if (s.coords[key]) return s.coords[key];
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=nl,be,de,fr,gb,pt&q=${encodeURIComponent(plaats)}`;
+    const j = await (await fetch(url, { headers: { 'Accept-Language': 'nl' } })).json();
+    if (!j[0]) return null;
+    const val = { lat: Number(j[0].lat), lon: Number(j[0].lon) };
+    store.update((st) => { st.coords[key] = val; });
+    return val;
+  } catch {
+    return null; // offline: later opnieuw via Meer › Coördinaten ophalen
+  }
+}
+
+// Afstand over de weg vanaf de startplaats, geschat als hemelsbreed × 1,3 en afgerond op 5 km.
+export async function distanceFromStart(plaats) {
+  if (!plaats) return null;
+  const start = await geocode(store.get().settings.startPlaats);
+  const doel = await geocode(plaats);
+  if (!start || !doel) return null;
+  const rad = (d) => (d * Math.PI) / 180;
+  const h = Math.sin(rad(doel.lat - start.lat) / 2) ** 2 + Math.cos(rad(start.lat)) * Math.cos(rad(doel.lat)) * Math.sin(rad(doel.lon - start.lon) / 2) ** 2;
+  const km = 2 * 6371 * Math.asin(Math.sqrt(h)) * 1.3;
+  return Math.round(km / 5) * 5;
+}

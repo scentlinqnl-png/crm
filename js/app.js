@@ -2,98 +2,23 @@ import {
   store, stats, statFor, customer, nextKlantnr, kmFor, minFor, todayISO, daysBetween, fullAddress, knownGeuren,
   uid, now, ACTIVITY_TYPES, openActivities, openDeals, dealsWithoutNextStep, norm,
   profile, saveProfile, ketenLocaties, adviseSystem, refillForecast, refillsDue,
+  openTickets, contractsEndingSoon, mrr, contactsFor,
 } from './store.js';
 import { planDay, mapsRouteUrl, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
-import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow } from './excel.js';
-import { geocodePlaces, missingPlaces } from './geo.js';
+import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
+import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
+import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
+import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
 import { planWithClaude, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
 
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+import {
+  $, $$, dialog, h, eur, ml, fmtDate, klassBadge, telHref, navHref, toast, weekStart, nextWorkday,
+  klantOptions, formData, openDialog, ask, hooks,
+} from './ui.js';
+
 const view = $('#view');
-const dialog = $('#dialog');
-
-// ---------- helpers ----------
-
-const h = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const eur = (n) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n || 0);
-const ml = (n) => (n === null || n === undefined || n === '' ? '–' : `${Math.round(n).toLocaleString('nl-NL')} ml`);
-const fmtDate = (iso) => (iso ? new Date(iso + 'T12:00:00').toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' }) : '–');
-const klassBadge = (k) => (k ? `<span class="badge k-${norm(k)}">${h(k)}</span>` : '');
-const telHref = (t) => {
-  let d = String(t || '').replace(/[^\d+]/g, '');
-  if (!d) return '';
-  if (d.startsWith('+')) return `tel:${d}`;
-  if (d.startsWith('00')) return `tel:+${d.slice(2)}`;
-  if (d.startsWith('31') || d.startsWith('32')) return `tel:+${d}`;
-  if (d.startsWith('0')) return `tel:${d}`;
-  return `tel:0${d}`; // Excel laat de voorloopnul weg (651359093 -> 0651359093)
-};
-const navHref = (c) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddress(c))}`;
-
-let toastTimer;
-function toast(msg, ms = 2600) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
-}
-
-function weekStart(iso = todayISO()) {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return todayISO(d);
-}
-
-function nextWorkday() {
-  const d = new Date();
-  do d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6);
-  return todayISO(d);
-}
-
-function klantOptions(selected) {
-  return store.get().customers
-    .slice()
-    .sort((a, b) => a.naam.localeCompare(b.naam))
-    .map((c) => `<option value="${h(c.nr)}" ${String(c.nr) === String(selected) ? 'selected' : ''}>${h(c.naam)} – ${h(c.plaats)}</option>`)
-    .join('');
-}
-
-function formData(form) {
-  return Object.fromEntries(new FormData(form).entries());
-}
-
-function openDialog(html, onSubmit) {
-  dialog.innerHTML = `<form method="dialog" class="dlg">${html}</form>`;
-  const form = $('form', dialog);
-  form.addEventListener('submit', (e) => {
-    const btn = e.submitter;
-    if (btn?.value === 'cancel') return;
-    e.preventDefault();
-    // Eerst sluiten: onSubmit mag direct een volgende dialoog openen.
-    const data = formData(form);
-    dialog.close();
-    onSubmit(data, btn?.value);
-  });
-  dialog.showModal();
-  return form;
-}
-
-// Bevestiging in de app zelf (window.confirm werkt niet in Teams-tabs en ingesloten weergaven).
-function ask(message, okLabel = 'Doorgaan') {
-  return new Promise((resolve) => {
-    openDialog(`
-      <p>${h(message)}</p>
-      <div class="actions">
-        <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
-        <button value="ok" class="btn primary">${h(okLabel)}</button>
-      </div>`, () => resolve(true));
-    dialog.addEventListener('close', () => resolve(false), { once: true });
-  });
-}
 
 function startDemo() {
   loadDemo();
@@ -103,6 +28,9 @@ function startDemo() {
   toast('Voorbeeldgegevens geladen (fictieve klanten)');
   render();
 }
+
+// Standalone is de standaard. Alleen na een Excel-import of Microsoft 365-koppeling tonen we Excel-teksten.
+const excelMode = () => m365.isSignedIn() || ['import', 'm365'].includes(store.get().source);
 
 // ---------- synchronisatie ----------
 
@@ -116,6 +44,11 @@ function renderSyncChip() {
   const btn = $('#syncBtn');
   const p = pendingCount();
   btn.hidden = false;
+  if (!excelMode()) {
+    btn.classList.remove('warn');
+    btn.textContent = 'Op dit apparaat';
+    return;
+  }
   btn.classList.toggle('warn', p > 0);
   if (syncing) btn.textContent = '⟳ Synchroniseren…';
   else if (!navigator.onLine) btn.textContent = `Offline${p ? ` · ${p} wachtend` : ''}`;
@@ -287,12 +220,13 @@ function dealDialog(pre = {}) {
 function emptyState() {
   return `
     <section class="card empty">
-      <h2>Nog geen klanten geladen</h2>
-      <p>Koppel Microsoft 365 om Klantkaart.xlsx rechtstreeks uit SharePoint te gebruiken, of importeer het bestand eenmalig.</p>
+      <h2>Welkom bij Klantkaart</h2>
+      <p>Begin met je eerste klant. Alles wordt op dit apparaat bewaard; je hebt geen Excel of ander programma nodig.</p>
       <div class="actions" style="justify-content:center">
-        <a class="btn primary" href="#/meer">Naar instellingen</a>
+        <a class="btn primary" href="#/klant/nieuw">+ Eerste klant toevoegen</a>
         <button class="btn" type="button" data-demo>Bekijk met voorbeeldgegevens</button>
       </div>
+      <p class="muted small">Heb je al een klantenlijst? Zet die over via <a href="#/meer">Meer › Gegevens overzetten</a> (Excel of een back-up).</p>
     </section>`;
 }
 
@@ -343,10 +277,11 @@ function viewVandaag() {
     <section class="kpis">
       <div class="kpi"><span>Bezoeken deze week</span><b>${weekVisits}<small>/${s.settings.doelBezoekenWeek}</small></b><i style="--p:${pct(weekVisits, s.settings.doelBezoekenWeek)}%"></i></div>
       <div class="kpi"><span>Verbruik deze maand</span><b>${ml(monthMl)}</b><i style="--p:${pct(monthMl, s.settings.doelVerbruikMaand)}%"></i></div>
-      <div class="kpi"><span>Open pipeline</span><b>${eur(pipeline)}</b><small>${openDeals().length} deals</small></div>
+      <div class="kpi"><span>Open pipeline</span><b>${eur(pipeline)}</b><small>${openDeals().length} deals · <a href="#/rapport">MRR ${eur(mrr())}</a></small></div>
       <div class="kpi"><span>Gewonnen deze maand</span><b>${eur(won.reduce((t, d) => t + d.waarde, 0))}</b><small>${won.length} deals</small></div>
     </section>
 
+    ${!excelMode() && s.source !== 'demo' && s.customers.length && (!s.lastBackup || daysBetween(s.lastBackup.slice(0, 10), today) > 7) ? `<a class="alert" href="#/meer">💾 ${s.lastBackup ? `Laatste back-up is ${daysBetween(s.lastBackup.slice(0, 10), today)} dagen oud` : 'Je hebt nog geen back-up gemaakt'}. Maak er een via Meer.</a>` : ''}
     ${noStep.length ? `<a class="alert" href="#/pipeline">⚠️ ${noStep.length} open deal(s) zonder volgende activiteit — plan een vervolgstap.</a>` : ''}
 
     <section class="card">
@@ -369,6 +304,22 @@ function viewVandaag() {
           <a class="btn primary" href="#/dag">Dag afsluiten</a>
         </div>` : '<p class="muted">Nog geen route voor vandaag.</p>'}
     </section>
+
+    ${(() => {
+      const open = openTickets();
+      const vandaag = open.filter((t) => t.datum === today);
+      const spoed = open.filter((t) => t.prioriteit === 'spoed');
+      if (!open.length) return '';
+      return `<section class="card">
+        <div class="card-head"><h2>🔧 Service</h2><a class="btn small" href="#/service?tab=route&d=${today}">Route vandaag</a></div>
+        <p class="muted small">${open.length} open tickets · ${vandaag.length} vandaag · ${spoed.length} spoed</p>
+        <ul class="list tickets">${[...spoed, ...vandaag.filter((t) => t.prioriteit !== 'spoed')].slice(0, 5).map((t) => ticketItem(t)).join('')}</ul>
+      </section>`;
+    })()}
+    ${(() => {
+      const ending = contractsEndingSoon(30);
+      return ending.length ? `<a class="alert" href="#/rapport">📄 ${ending.length} contract(en) lopen binnen 30 dagen af — tijd om te verlengen.</a>` : '';
+    })()}
 
     <section class="card">
       <div class="card-head"><h2>Activiteiten</h2><button class="btn small" id="newAct">+ Activiteit</button></div>
@@ -402,6 +353,7 @@ function viewVandaag() {
 }
 viewVandaag.after = () => {
   $('#newAct')?.addEventListener('click', () => activityDialog());
+  bindTicketList(view);
   bindActivityList(view);
 };
 
@@ -432,7 +384,7 @@ viewKlanten.after = () => {
   const draw = () => {
     const q = norm(klantFilter.q);
     let rows = store.get().customers.map((c) => ({ c, st: statFor(all, c.nr), p: profile(c.nr) }));
-    if (q) rows = rows.filter(({ c, p }) => [c.naam, c.plaats, c.postcode, c.adres, c.nr, p.keten, p.contactpersoon, p.geurprofiel].some((f) => norm(f).includes(q)));
+    if (q) rows = rows.filter(({ c, p }) => [c.naam, c.plaats, c.postcode, c.adres, c.nr, p.keten, p.contactpersoon, p.geurprofiel, p.labels, ...contactsFor(c.nr).map((x) => x.naam)].some((f) => norm(f).includes(q)));
     if (klantFilter.sector === '-') rows = rows.filter((x) => !x.p.sector);
     else if (klantFilter.sector) rows = rows.filter((x) => x.p.sector === klantFilter.sector);
     const f = klantFilter.filter;
@@ -481,8 +433,9 @@ function viewKlant(nr) {
   const locaties = ketenLocaties(nr);
 
   const timeline = [
-    ...visits.map((v) => ({ d: v.datum, html: `🌸 <b>Bezoek</b> · ${ml(v.ml)}${v.geur ? ` · ${h(v.geur)}` : ''}${v.instellingen ? ` · ${h(v.instellingen)}` : ''}${v.opmerking ? `<div class="sub">${h(v.opmerking)}</div>` : ''}${v.pending ? ' <span class="badge">nog niet in Excel</span>' : ''}` })),
+    ...visits.map((v) => ({ d: v.datum, html: `🌸 <b>Bezoek</b> · ${ml(v.ml)}${v.geur ? ` · ${h(v.geur)}` : ''}${v.instellingen ? ` · ${h(v.instellingen)}` : ''}${v.opmerking ? `<div class="sub">${h(v.opmerking)}</div>` : ''}${v.pending && excelMode() ? ' <span class="badge">nog niet in Excel</span>' : ''}` })),
     ...acts.filter((a) => a.done).map((a) => ({ d: a.datum, html: `${h(ACTIVITY_TYPES[a.type]?.split(' ')[0] || '✅')} ${h(a.titel)}${a.notitie ? `<div class="sub">${h(a.notitie)}</div>` : ''}` })),
+    ...crmTimeline(nr),
     ...deals.filter((d) => d.gesloten).map((d) => ({ d: d.gesloten, html: `${d.status === 'gewonnen' ? '🏆' : '✖️'} Deal ${h(d.status)}: ${h(d.titel)} (${eur(d.waarde)})` })),
   ].sort((a, b) => b.d.localeCompare(a.d));
 
@@ -490,6 +443,7 @@ function viewKlant(nr) {
     <a class="back" href="#/klanten">‹ Klanten</a>
     <section class="card hero">
       <div class="card-head"><div><h1>${h(c.naam)}</h1><div class="sub">Klantnr. ${h(c.nr)} · ${h(c.plaats)}</div></div>${klassBadge(st.classificatie)}</div>
+      ${klantCrmHead(nr)}
       <div class="quick">
         ${tel ? `<a class="btn" href="${h(tel)}">📞 Bellen</a>` : ''}
         <a class="btn" href="${h(navHref(c))}" target="_blank" rel="noopener">🧭 Route</a>
@@ -524,6 +478,8 @@ function viewKlant(nr) {
       <div class="actions left"><a class="btn" href="#/offerte?nr=${h(c.nr)}">📄 Offerte maken</a><button class="btn" id="proef">🌸 Proefplaatsing</button></div>
     </section>
 
+    ${klantCrmSections(nr)}
+
     <section class="card">
       <div class="card-head"><h2>Deals</h2><button class="btn small" id="newDeal">+ Deal</button></div>
       <ul class="list compact">
@@ -554,6 +510,7 @@ viewKlant.after = (nr) => {
   $$('[data-deal]').forEach((el) => el.addEventListener('click', () => dealDialog(store.get().deals.find((d) => d.id === el.dataset.deal))));
   bindActivityList(view);
   $('#editProfile')?.addEventListener('click', () => profileDialog(nr));
+  bindKlantCrm(nr);
   $('#proef')?.addEventListener('click', () => activityDialog({ nr, type: 'demo', titel: 'Proefplaatsing ' + (profile(nr).geurprofiel || 'geursample') }));
   $('#pin')?.addEventListener('click', () => {
     store.update((s) => {
@@ -585,8 +542,8 @@ function viewKlantForm(nr) {
       </div>
       <datalist id="plaatsen">${plaatsen.map((p) => `<option value="${h(p.replace(/(^|\s|-)\S/g, (x) => x.toUpperCase()))}">`).join('')}</datalist>
       <label>Telefoon<input name="telefoon" type="tel" value="${h(c.telefoon)}"></label>
-      <label>Afstand vanaf ${h(store.get().settings.startPlaats)} (km)<input name="km" type="number" inputmode="numeric" value="${h(c.km ?? '')}" placeholder="automatisch uit tabblad Afstanden"></label>
-      <p class="muted small">Klantnr. ${h(c.nr)}${store.get().source === 'm365' ? ' · wordt bij synchroniseren in Blad1 van Klantkaart.xlsx gezet' : ''}</p>
+      <label>Afstand vanaf ${h(store.get().settings.startPlaats)} (km)<input name="km" type="number" inputmode="numeric" value="${h(c.km ?? '')}" placeholder="wordt automatisch berekend"></label>
+      <p class="muted small">Klantnr. ${h(c.nr)}${m365.isSignedIn() ? ' · wordt bij synchroniseren in Blad1 van Klantkaart.xlsx gezet' : ''}</p>
       <div class="actions"><button class="btn primary">Opslaan</button></div>
     </form>`;
 }
@@ -610,6 +567,15 @@ viewKlantForm.after = (nr) => {
     toast('Klant opgeslagen');
     location.hash = `#/klant/${target}`;
     runSync({ quiet: true });
+    // Geen afstand bekend (geen Excel-tabel Afstanden): zelf uitrekenen via de plaatsnaam.
+    if (fields.km === null || fields.km === undefined || Number.isNaN(fields.km)) {
+      distanceFromStart(fields.plaats).then((km) => {
+        if (km === null) return;
+        store.update(() => { const c = customer(target); c.km = km; c.min = minFor(km); });
+        toast(`Afstand berekend: ca. ${km} km vanaf ${store.get().settings.startPlaats}`);
+        render();
+      });
+    }
   });
 };
 
@@ -630,7 +596,7 @@ function viewBezoek(params) {
       <label>Opmerking<textarea name="opmerking" rows="2"></textarea></label>
       <label class="inline"><input type="checkbox" name="vervolg" checked> Direct een vervolgbezoek plannen</label>
       <div class="actions"><button class="btn primary">Opslaan</button></div>
-      <p class="muted small">${s.source === 'm365' && m365.isSignedIn() ? 'Wordt automatisch in het tabblad Verbruik van Klantkaart.xlsx gezet.' : 'Wordt lokaal bewaard. Koppel Microsoft 365 of kopieer de regels via “Dag afsluiten”.'}</p>
+      <p class="muted small">${m365.isSignedIn() ? 'Wordt automatisch in het tabblad Verbruik van Klantkaart.xlsx gezet.' : excelMode() ? 'Wordt op dit apparaat bewaard. Kopieer de regels naar Excel via “Dag afsluiten”.' : 'Wordt op dit apparaat bewaard.'}</p>
     </form>`;
 }
 viewBezoek.after = () => {
@@ -877,16 +843,16 @@ function viewDag(params) {
         ${todo.map((c) => dagRow(c, statFor(all, c.nr), true)).join('')}
       </div>
       <select id="extraKlant" aria-label="Extra klant"><option value="">+ Extra klant toevoegen…</option>${klantOptions()}</select>
-      <p class="muted small">Klanten zonder verbruik (afwezig, 0 ml) krijgen geen regel in Verbruik.</p>
+      <p class="muted small">Klanten zonder verbruik (afwezig, 0 ml) worden niet als bezoek vastgelegd.</p>
       <div class="actions"><button class="btn primary">Bezoeken opslaan</button></div>
     </form>
     <datalist id="geuren">${knownGeuren().map((g) => `<option value="${h(g)}">`).join('')}</datalist>
     ${logged.length ? `
       <section class="card">
         <h2>Vastgelegd op ${fmtDate(datum)}</h2>
-        <ul class="list compact">${logged.map((v) => `<li><div><b>${h(customer(v.nr)?.naam || v.nr)}</b><span class="sub">${ml(v.ml)} · ${h(v.geur || '–')} · ${h(v.instellingen || '–')}${v.pending ? ' · nog niet in Excel' : ''}</span></div>${v.pending ? `<button class="icon" data-del-visit="${h(v.id)}" aria-label="Verwijderen">✕</button>` : ''}</li>`).join('')}</ul>
+        <ul class="list compact">${logged.map((v) => `<li><div><b>${h(customer(v.nr)?.naam || v.nr)}</b><span class="sub">${ml(v.ml)} · ${h(v.geur || '–')} · ${h(v.instellingen || '–')}${v.pending && excelMode() ? ' · nog niet in Excel' : ''}</span></div>${v.pending || !excelMode() ? `<button class="icon" data-del-visit="${h(v.id)}" aria-label="Verwijderen">✕</button>` : ''}</li>`).join('')}</ul>
       </section>` : ''}
-    ${pending.length ? `
+    ${pending.length && excelMode() ? `
       <section class="card">
         <h2>Nog niet in Klantkaart.xlsx (${pending.length})</h2>
         ${m365.isSignedIn() ? '<p>Deze regels worden weggeschreven zodra je online bent.</p><button class="btn primary" id="syncNow">Nu synchroniseren</button>' : `
@@ -955,6 +921,9 @@ viewDag.after = () => {
 };
 
 let installPrompt = null;
+let persisted = null;
+// Vraag de browser de gegevens niet automatisch op te ruimen (belangrijk nu de app zelfstandig is).
+navigator.storage?.persist?.().then((ok) => { persisted = ok; }).catch(() => {});
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
 
 function viewMeer() {
@@ -964,18 +933,30 @@ function viewMeer() {
   const missing = missingPlaces().length;
   return `
     <h1>Meer</h1>
+    <a class="card nav-card" href="#/rapport"><b>📈 Rapportage</b><span class="sub">MRR, contracten, pipelineconversie, verbruik per sector en servicecijfers</span></a>
     <section class="card">
       <h2>Gegevens</h2>
-      <p>${s.customers.length} klanten · ${s.visits.length} bezoeken · ${openDeals().length} open deals${s.lastSync ? `<br><span class="muted small">Laatst bijgewerkt ${new Date(s.lastSync).toLocaleString('nl-NL')} (${s.source === 'm365' ? 'Microsoft 365' : s.source === 'demo' ? 'voorbeeldgegevens' : 'import'})</span>` : ''}</p>
+      <p>${s.customers.length} klanten · ${s.visits.length} bezoeken · ${openDeals().length} open deals<br>
+      <span class="muted small">Opgeslagen op dit apparaat${persisted === true ? ' (beschermd tegen automatisch opruimen)' : ''}. Laatste back-up: ${s.lastBackup ? new Date(s.lastBackup).toLocaleDateString('nl-NL') : 'nog nooit'}.</span></p>
       <div class="actions left">
-        <label class="btn">📂 Klantkaart.xlsx importeren<input type="file" id="importFile" accept=".xlsx,.xlsm" hidden></label>
-        <button class="btn" id="backup">⬇️ Back-up (.xlsx)</button>
+        <button class="btn primary" id="backupJson">⬇️ Back-up maken</button>
+        <label class="btn">📂 Back-up terugzetten<input type="file" id="restoreFile" accept=".json,application/json" hidden></label>
         ${s.customers.length ? '' : '<button class="btn" id="demoBtn">Voorbeeldgegevens</button>'}
       </div>
+      <p class="muted small">Maak regelmatig een back-up en bewaar die bijvoorbeeld in OneDrive. Met hetzelfde bestand zet je je gegevens over naar een nieuwe telefoon of computer.</p>
     </section>
 
-    <section class="card form">
-      <h2>Microsoft 365 / SharePoint</h2>
+    <details class="card optional">
+      <summary><b>Gegevens overzetten uit Excel</b> <span class="muted small">(optioneel)</span></summary>
+      <p class="muted small">Eenmalig je bestaande Klantkaart.xlsx inlezen (tabbladen Blad1, Verbruik en Afstanden). Daarna werkt de app zonder Excel verder.</p>
+      <div class="actions left">
+        <label class="btn">📂 Klantkaart.xlsx inlezen<input type="file" id="importFile" accept=".xlsx,.xlsm" hidden></label>
+        <button class="btn" id="backup">⬇️ Exporteren naar Excel</button>
+      </div>
+    </details>
+
+    <details class="card form optional" ${signed ? 'open' : ''}>
+      <summary><b>Koppeling met Microsoft 365</b> <span class="muted small">(optioneel)</span></summary>
       <p class="muted small">Leest en schrijft rechtstreeks in Klantkaart.xlsx: klanten uit <b>Blad1</b>, bezoeken naar <b>Verbruik</b>, pipeline, activiteiten en klantprofielen naar de tabbladen <b>CRM_Deals</b>, <b>CRM_Activiteiten</b> en <b>CRM_Klantprofiel</b>. Zie README voor het registreren van de app in Entra ID.</p>
       <form id="m365Form">
         <label>Application (client) ID<input name="clientId" value="${h(c.clientId)}" placeholder="00000000-0000-0000-0000-000000000000"></label>
@@ -992,7 +973,7 @@ function viewMeer() {
         </div>
         <p id="who" class="muted small"></p>
       </form>
-    </section>
+    </details>
 
     <section class="card form">
       <h2>Claude</h2>
@@ -1068,6 +1049,23 @@ viewMeer.after = async () => {
     }
   });
   $('#backup').addEventListener('click', exportBackup);
+  $('#backupJson').addEventListener('click', () => {
+    exportJsonBackup();
+    toast('Back-up gemaakt');
+    render();
+  });
+  $('#restoreFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (!(await ask('Alle gegevens op dit apparaat vervangen door deze back-up?', 'Terugzetten'))) return;
+    try {
+      const r = await restoreJsonBackup(f);
+      toast(`${r.klanten} klanten en ${r.bezoeken} bezoeken teruggezet`);
+      render();
+    } catch (err) {
+      toast('Terugzetten mislukt: ' + err.message, 5000);
+    }
+  });
   $('#m365Form').addEventListener('submit', (e) => {
     e.preventDefault();
     const d = formData(e.target);
@@ -1278,6 +1276,8 @@ const routes = [
   [/^\/planning$/, viewPlanning, 'planning', true],
   [/^\/dag$/, viewDag, 'vandaag', true],
   [/^\/offerte$/, viewOfferte, 'klanten', true],
+  [/^\/service$/, viewService, 'service', true],
+  [/^\/rapport$/, viewRapport, 'meer'],
   [/^\/meer$/, viewMeer, 'meer'],
 ];
 
@@ -1299,8 +1299,11 @@ function render() {
   lastRoute = location.hash;
 }
 
+hooks.render = render;
+hooks.sync = () => runSync({ quiet: true });
 window.addEventListener('hashchange', render);
-if (window.KLANTKAART_DEMO && !store.get().customers.length) startDemo();
+// Voorbeeldweergave: laad voorbeeldgegevens bij een lege app, of ververs oudere voorbeeldgegevens zonder service/CRM.
+if (window.KLANTKAART_DEMO && (!store.get().customers.length || (store.get().source === 'demo' && !store.get().tickets.length))) startDemo();
 render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

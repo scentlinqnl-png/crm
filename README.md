@@ -5,6 +5,19 @@ en het Teams-kanaal **Sales › Prospects** samenbrengt in één mobiele sales- 
 De app werkt offline. Met een Microsoft 365-koppeling leest en schrijft hij rechtstreeks in het werkboek,
 zodat Excel en Teams de centrale bron blijven.
 
+## Standalone
+
+De app werkt **helemaal zelfstandig**: geen Excel, geen Microsoft 365 en geen server nodig.
+Je begint met je eerste klant (of met voorbeeldgegevens) en alles wordt op het apparaat bewaard.
+Afstanden vanaf de startplaats rekent de app zelf uit op basis van de plaatsnaam.
+
+- **Back-up**: *Meer › Back-up maken* maakt een `.json`-bestand. Bewaar het bijvoorbeeld in OneDrive.
+  Met *Back-up terugzetten* zet je alles over naar een nieuwe telefoon of computer.
+  Het startscherm herinnert je eraan als je laatste back-up ouder is dan een week.
+- **Let op**: zonder koppeling staan de gegevens op één apparaat en zien collega's elkaars bezoeken niet.
+- **Optioneel**: je bestaande Klantkaart.xlsx eenmalig inlezen, exporteren naar Excel, of blijvend koppelen
+  met Microsoft 365 (zie verderop). Claude-planning werkt ook standalone, met een eigen API-sleutel.
+
 ## Wat zit erin
 
 | Scherm | Functie |
@@ -43,6 +56,32 @@ Nog niet gebouwd (vervolgstappen): partner-/distributeursdashboard, meertalige c
 SDS/certificaten automatisch bij de offerte, koppeling met field-service-software, looptijd-
 (vernevelingsuren) i.p.v. ml als basis voor navullen.
 
+## Service & helpdesk
+
+Tabblad **Service** (voor het Helpdesk-team):
+- **Tickets**: storing, navulling, onderhoud, installatie, verwijdering of vraag, met prioriteit
+  (spoed/hoog/normaal/laag), status (nieuw → ingepland → onderweg → opgelost) en een ticketnummer (T-0001).
+  Een ticket kan aan een geplaatst systeem gekoppeld worden.
+- **Navulling voorspeld**: klanten die volgens hun verbruik binnenkort leeg zijn krijgen met één tik een navulticket.
+- **Agenda**: weekoverzicht van ingeplande tickets (met uren werk en salesbezoeken per dag) en een lijst van
+  tickets die nog niet zijn ingepland.
+- **Route**: de helpdeskroute per dag. Tickets per klant samengevoegd, volgorde geoptimaliseerd, tijden op basis
+  van de duur per ticket. Open in Google Maps, zet de tijden terug in de tickets, markeer "onderweg" en rond af.
+  Bij afronden van een navulling/onderhoud leg je meteen het verbruik vast; het onderhoud van het systeem wordt bijgewerkt.
+
+## Uitgebreide CRM
+
+Op de klantkaart:
+- **Status en labels**: Prospect, Proefplaatsing, Klant, Oud-klant (of automatisch) en eigen labels.
+- **Contactpersonen**: meerdere per klant, met functie, telefoon, e-mail en primair aanspreekpunt.
+- **Contracten**: serviceabonnement, lease, huur of koop, met bedrag per maand en eenmalig, looptijd en opzegtermijn.
+- **Geplaatste systemen**: systeem, serienummer, plek in het pand, geur, plaatsingsdatum, laatste onderhoud en status.
+- **Service**: open tickets van de klant; afgeronde tickets staan in de tijdlijn.
+
+**Rapportage** (Meer › Rapportage): MRR/ARR, contracten die binnen 60 dagen aflopen, pipelineconversie,
+gewonnen dealwaarde en verbruik per maand, cijfers per sector, klanten per status en servicecijfers
+(open tickets per type, gemiddelde doorlooptijd, nieuwe tickets per maand).
+
 ## Plan met Claude
 
 In **Planning** staat de kaart *✨ Plan met Claude*. Typ in gewone taal wat je wilt, bijvoorbeeld
@@ -71,8 +110,8 @@ Zonder internet werkt dit niet; de gewone dagplanner werkt wel offline.
   - een nieuw bezoek komt op de eerstvolgende vrije regel in **Verbruik** (A=datum, B=klantnr.,
     D=ml, E=opmerking, F=geur, G=instellingen; de formule in kolom C blijft staan)
   - nieuwe klanten komen op de eerste vrije regel in **Blad1** (A–F). De formules in G–L rekenen door
-  - pipeline, activiteiten en klantprofielen komen in nieuwe tabbladen **CRM_Deals**,
-    **CRM_Activiteiten** en **CRM_Klantprofiel** (die maakt de app zelf aan)
+  - pipeline, activiteiten, klantprofielen, tickets, contactpersonen, contracten en systemen komen in
+    tabbladen met de naam **CRM_…** (die maakt de app zelf aan)
   - offline gemaakte wijzigingen worden weggeschreven zodra je weer online bent
 
 Er staan **geen klantgegevens in deze repository**. Alles komt uit je eigen werkboek.
@@ -125,7 +164,10 @@ python3 -m http.server 8080
 | Bestand | Inhoud |
 |---|---|
 | `index.html`, `styles.css` | Shell en opmaak (licht/donker, mobiel eerst) |
-| `js/app.js` | Schermen, dialogen, router |
+| `js/app.js` | Hoofdschermen, dialogen, router |
+| `js/ui.js` | Gedeelde UI-hulpfuncties |
+| `js/service.js` | Tickets, service-agenda en helpdeskroute |
+| `js/crm.js` | Contactpersonen, contracten, systemen, klantstatus en rapportage |
 | `js/store.js` | Lokale opslag, parsing van het werkboek, statistieken/classificatie, navulvoorspelling, calculator |
 | `js/planner.js` | Dagplanner en Google Maps-route |
 | `js/graph.js`, `js/auth-page.js`, `auth.html` | Microsoft 365-aanmelding (OAuth2 + PKCE) en Graph Excel-API |

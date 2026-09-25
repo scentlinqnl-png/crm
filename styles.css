@@ -85,7 +85,7 @@ main { max-width: 900px; margin: 0 auto; padding: 8px 16px; outline: none; }
 
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--surface); border-top: 1px solid var(--line);
@@ -264,3 +264,46 @@ dialog::backdrop { background: rgb(0 0 0 / 45%); }
   body { background: #fff; color: #000; padding: 0; }
   .card { box-shadow: none; border: 0; }
 }
+
+/* optionele koppelingen (Excel, Microsoft 365) */
+details.optional > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; }
+details.optional > summary::-webkit-details-marker { display: none; }
+details.optional > summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
+details.optional[open] > summary::before { transform: rotate(90deg); }
+details.optional[open] > summary { margin-bottom: 8px; }
+@media (prefers-reduced-motion: reduce) { details.optional > summary::before { transition: none; } }
+
+/* service & tickets */
+.segmented { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 12px; margin: 8px 0 12px; }
+.segmented a { flex: 1; text-align: center; padding: 8px; border-radius: 9px; color: var(--muted); font-weight: 500; }
+.segmented a.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.list.tickets li { align-items: flex-start; }
+.ticket { border-left: 3px solid transparent; padding-left: 8px !important; }
+.prio-line-spoed { border-left-color: var(--danger); }
+.prio-line-hoog { border-left-color: var(--accent); }
+.ticket-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.code { font-variant-numeric: tabular-nums; font-size: .78rem; color: var(--muted); font-weight: 600; }
+.badge.prio-spoed { background: var(--k-weinig-bg); color: var(--k-weinig-ink); }
+.badge.prio-hoog { background: var(--deal-bg); color: var(--deal-ink); }
+.badge.st-opgelost, .badge.st-gesloten { background: var(--k-normaal-bg); color: var(--k-normaal-ink); }
+.badge.st-onderweg { background: var(--k-veel-bg); color: var(--k-veel-ink); }
+.week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 10px; }
+.agenda { display: grid; gap: 10px; }
+@media (min-width: 760px) { .agenda { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); } }
+.day { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.day.today { border-color: var(--accent); }
+.day header { display: flex; flex-direction: column; margin-bottom: 4px; }
+.route .list.compact li { padding: 6px 0; }
+
+/* CRM */
+.crm-head { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.status-badge { border: 1px solid var(--line); cursor: pointer; font: inherit; font-size: .72rem; font-weight: 600; }
+.nav-card { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+.table-wrap { overflow-x: auto; }
+.bars { display: grid; gap: 6px; }
+.bar-row { display: grid; grid-template-columns: minmax(70px, 30%) 1fr auto; align-items: center; gap: 8px; font-size: .85rem; }
+.bar-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 12px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.bar { display: block; height: 100%; background: var(--brand-2); border-radius: 0 4px 4px 0; }
+.bar-value { font-variant-numeric: tabular-nums; min-width: 60px; text-align: right; }
+.bar-row:hover .bar { background: var(--brand); }
