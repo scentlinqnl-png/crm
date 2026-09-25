@@ -92,6 +92,7 @@ export function assetDialog(nr, pre = {}) {
       <label>Geur<input name="geur" value="${h(a.geur)}"></label>
       <label>Status<select name="status">${['actief', 'proef', 'defect', 'verwijderd'].map((x) => `<option ${a.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     </div>
+    <label>Onderhoud elke<select name="interval">${[['', 'geen vast schema'], ['3', '3 maanden'], ['6', '6 maanden'], ['12', '12 maanden']].map(([v, l]) => `<option value="${v}" ${String(a.interval || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <div class="actions">
       ${a.id ? '<button value="ticket" class="btn ghost" formnovalidate>+ Ticket</button><button value="delete" class="btn ghost danger" formnovalidate>Verwijderen</button>' : ''}
       <button value="cancel" class="btn ghost" formnovalidate>Annuleren</button>
@@ -99,7 +100,7 @@ export function assetDialog(nr, pre = {}) {
     </div>`, (d, action) => {
     if (action === 'delete') { softDelete('assets', a.id); return done('Systeem verwijderd'); }
     if (action === 'ticket') return ticketDialog({ nr, assetId: a.id });
-    upsert('assets', { id: a.id, nr: Number(nr), ...d });
+    upsert('assets', { id: a.id, nr: Number(nr), ...d, interval: Number(d.interval) || null });
     done('Systeem opgeslagen');
   });
 }
@@ -155,7 +156,7 @@ export function klantCrmSections(nr) {
 
     <section class="card">
       <div class="card-head"><h2>Geplaatste systemen</h2><button class="btn small" id="newAsset">+ Systeem</button></div>
-      <ul class="list compact">${assets.map((a) => `<li class="clickable" data-asset="${h(a.id)}"><div><b>${h(a.systeem)}</b>${a.locatie ? ` · ${h(a.locatie)}` : ''}<span class="sub">${a.serienummer ? `SN ${h(a.serienummer)} · ` : ''}geplaatst ${fmtDate(a.geplaatst)}${a.laatsteOnderhoud ? ` · onderhoud ${fmtDate(a.laatsteOnderhoud)}` : ''}${a.geur ? ` · ${h(a.geur)}` : ''}</span></div><span class="badge ${a.status === 'defect' ? 'k-weinig' : a.status === 'actief' ? 'k-normaal' : ''}">${h(a.status)}</span></li>`).join('') || '<li class="muted">Nog geen systemen geregistreerd.</li>'}</ul>
+      <ul class="list compact">${assets.map((a) => `<li class="clickable" data-asset="${h(a.id)}"><div><b>${h(a.systeem)}</b>${a.locatie ? ` · ${h(a.locatie)}` : ''}<span class="sub">${a.serienummer ? `SN ${h(a.serienummer)} · ` : ''}geplaatst ${fmtDate(a.geplaatst)}${a.laatsteOnderhoud ? ` · onderhoud ${fmtDate(a.laatsteOnderhoud)}` : ''}${a.interval ? ` · elke ${h(a.interval)} mnd` : ''}${a.geur ? ` · ${h(a.geur)}` : ''}</span></div><span class="badge ${a.status === 'defect' ? 'k-weinig' : a.status === 'actief' ? 'k-normaal' : ''}">${h(a.status)}</span></li>`).join('') || '<li class="muted">Nog geen systemen geregistreerd.</li>'}</ul>
     </section>
 
     <section class="card">

@@ -307,3 +307,21 @@ details.optional[open] > summary { margin-bottom: 8px; }
 .bar { display: block; height: 100%; background: var(--brand-2); border-radius: 0 4px 4px 0; }
 .bar-value { font-variant-numeric: tabular-nums; min-width: 60px; text-align: right; }
 .bar-row:hover .bar { background: var(--brand); }
+
+/* foto's, handtekening, voorraad */
+.photos { display: grid; gap: 8px; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.photo-grid:empty { display: none; }
+.thumb { position: relative; margin: 0; aspect-ratio: 1; max-width: 100%; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .icon { position: absolute; top: 2px; right: 2px; background: rgb(0 0 0 / 55%); color: #fff; border-radius: 50%; width: 26px; height: 26px; padding: 0; font-size: .8rem; }
+canvas.sig { width: 100%; height: 150px; background: #fff; border-radius: 10px; border: 1px dashed var(--line); touch-action: none; display: block; }
+.sig-img { max-width: 220px; background: #fff; border-radius: 8px; padding: 4px; }
+.ticket-media { display: grid; gap: 8px; margin: 10px 0; }
+.ticket-media:empty { display: none; }
+.stock-pick { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
+.stock-row { display: grid; grid-template-columns: 1fr 72px; align-items: center; gap: 8px; margin: 0; color: var(--text); }
+.stock-row input { min-height: 38px; padding: 6px 8px; margin: 0; }
+.list.stock li { gap: 4px; }
+.stock-n { min-width: 36px; text-align: center; font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+.list.stock .icon { font-size: 1.3rem; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); }

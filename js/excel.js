@@ -1,5 +1,6 @@
 // Import van Klantkaart.xlsx en exports (Verbruik-regels, back-up, Google My Maps).
 /* global XLSX */
+import { exportMedia, importMedia } from './media.js';
 import { store, parseBlad1, parseVerbruik, parseAfstanden, mergeWorkbook, customer, fullAddress, isoToSerial, CRM_SHEETS, crmFromRows, mergeById } from './store.js';
 
 function sheetRows(wb, name) {
@@ -67,7 +68,7 @@ export function exportBackup() {
   XLSX.utils.book_append_sheet(wb, wsV, 'Verbruik');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(afst), 'Afstanden');
   for (const [key, def] of Object.entries(CRM_SHEETS)) {
-    const rows = [def.cols, ...s[key].map((o) => def.cols.map((c) => o[c] ?? ''))];
+    const rows = [def.cols, ...s[key].map((o) => def.cols.map((c) => (Array.isArray(o[c]) ? o[c].join(',') : o[c] ?? '')))];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), def.name);
   }
   XLSX.writeFile(wb, `Klantkaart-backup-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -92,13 +93,15 @@ export function exportMyMaps(plan) {
 
 // ---------- standalone back-up (JSON, geen Excel nodig) ----------
 
-const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'settings'];
+const BACKUP_KEYS = ['customers', 'visits', 'afstanden', 'coords', 'plans', 'deals', 'activities', 'profiles', 'pinned', 'tickets', 'ticketSeq', 'contacts', 'contracts', 'assets', 'serviceRoutes', 'stock', 'stockMoves', 'settings'];
 
-export function exportJsonBackup() {
+export async function exportJsonBackup() {
   const s = store.get();
   const data = { app: 'klantkaart', versie: 1, gemaakt: new Date().toISOString(), ...Object.fromEntries(BACKUP_KEYS.map((k) => [k, s[k]])) };
   // Microsoft- en Claude-sleutels horen niet in een back-upbestand.
   data.settings = { ...data.settings, m365: { ...data.settings.m365, clientId: '' } };
+  // Foto's en handtekeningen gaan mee in de back-up.
+  data.media = await exportMedia(s.tickets.flatMap((t) => [...(t.fotos || []), t.handtekening]).filter(Boolean));
   download(`Klantkaart-backup-${todayStamp()}.json`, new Blob([JSON.stringify(data)], { type: 'application/json' }));
   store.update((st) => { st.lastBackup = new Date().toISOString(); });
 }
@@ -106,6 +109,7 @@ export function exportJsonBackup() {
 export async function restoreJsonBackup(file) {
   const data = JSON.parse(await file.text());
   if (data.app !== 'klantkaart' || !Array.isArray(data.customers)) throw new Error('Dit is geen Klantkaart-back-up.');
+  await importMedia(data.media);
   store.update((s) => {
     for (const k of BACKUP_KEYS) if (data[k] !== undefined) s[k] = k === 'settings' ? { ...s.settings, ...data.settings, m365: s.settings.m365 } : data[k];
     s.source = 'app';

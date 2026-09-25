@@ -95,6 +95,9 @@ export function loadDemo() {
     }));
     s.tickets.push({ id: uid(), code: 'T-0008', nr: 1, assetId: s.assets[0].id, type: 'storing', prioriteit: 'hoog', status: 'opgelost', titel: 'Lekkage bij aansluiting', omschrijving: '', melder: 'Mark Jansen', gemeld: dayISO(-12), datum: dayISO(-11), tijd: '10:00', duur: 45, oplossing: 'Koppeling vervangen en getest.', gesloten: dayISO(-11), deleted: false, updatedAt: now() });
     s.ticketSeq = 8;
+    s.assets.forEach((a, i) => { a.interval = [6, 6, 12, 6, 12, 6, 6, 12][i] || 6; });
+    s.stock = [];
+    s.stockMoves = [];
     s.profiles.forEach((p) => { if ([1, 2, 6, 8, 9, 15].includes(Number(p.nr))) p.status = 'Klant'; });
     s.serviceRoutes = {};
     s.plans = {};

@@ -2,13 +2,14 @@ import {
   store, stats, statFor, customer, nextKlantnr, kmFor, minFor, todayISO, daysBetween, fullAddress, knownGeuren,
   uid, now, ACTIVITY_TYPES, openActivities, openDeals, dealsWithoutNextStep, norm,
   profile, saveProfile, ketenLocaties, adviseSystem, refillForecast, refillsDue,
-  openTickets, contractsEndingSoon, mrr, contactsFor,
+  openTickets, contractsEndingSoon, mrr, contactsFor, createMaintenanceTickets,
 } from './store.js';
 import { planDay, mapsRouteUrl, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
+import { seedStock } from './stock.js';
 import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
 import { planWithClaude, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
@@ -22,6 +23,8 @@ const view = $('#view');
 
 function startDemo() {
   loadDemo();
+  seedStock();
+  createMaintenanceTickets();
   const today = todayISO();
   const plan = planDay({ datum: today });
   store.update((s) => { s.plans[today] = plan; });
@@ -976,6 +979,22 @@ function viewMeer() {
     </details>
 
     <section class="card form">
+      <h2>Service & servicerapport</h2>
+      <form id="bedrijfForm">
+        <label>Bedrijfsnaam<input name="naam" value="${h(s.settings.bedrijf.naam)}"></label>
+        <label>Adres<input name="adres" value="${h(s.settings.bedrijf.adres)}" placeholder="Straat 1, 4611 AA Bergen op Zoom"></label>
+        <div class="row2">
+          <label>Telefoon<input name="telefoon" value="${h(s.settings.bedrijf.telefoon)}"></label>
+          <label>E-mail<input name="email" type="email" value="${h(s.settings.bedrijf.email)}"></label>
+        </div>
+        <label>KvK / btw<input name="kvk" value="${h(s.settings.bedrijf.kvk)}"></label>
+        <label>Naam monteur (dit apparaat)<input name="monteur" value="${h(s.settings.monteur)}"></label>
+        <label class="inline"><input type="checkbox" name="autoOnderhoud" ${s.settings.autoOnderhoud ? 'checked' : ''}> Onderhoudstickets automatisch aanmaken (${h(s.settings.onderhoudVooruit)} dagen vooruit)</label>
+        <div class="actions left"><button class="btn primary">Opslaan</button></div>
+      </form>
+    </section>
+
+    <section class="card form">
       <h2>Claude</h2>
       <p class="muted small">Met Claude kun je in Planning een dag laten samenstellen in gewone taal. Claude krijgt daarvoor per klant naam, plaats, afstand, bezoekhistorie, classificatie, navulmoment, sector en open deals/activiteiten mee. Model: <code>${h(CLAUDE_MODEL)}</code>.</p>
       <form id="claudeForm">
@@ -1049,8 +1068,8 @@ viewMeer.after = async () => {
     }
   });
   $('#backup').addEventListener('click', exportBackup);
-  $('#backupJson').addEventListener('click', () => {
-    exportJsonBackup();
+  $('#backupJson').addEventListener('click', async () => {
+    await exportJsonBackup();
     toast('Back-up gemaakt');
     render();
   });
@@ -1084,6 +1103,16 @@ viewMeer.after = async () => {
     }
   });
   $('#signOut')?.addEventListener('click', () => { m365.signOut(); render(); });
+  $('#bedrijfForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    store.update((s) => {
+      s.settings.bedrijf = { naam: d.naam.trim(), adres: d.adres.trim(), telefoon: d.telefoon.trim(), email: d.email.trim(), kvk: d.kvk.trim() };
+      s.settings.monteur = d.monteur.trim();
+      s.settings.autoOnderhoud = !!d.autoOnderhoud;
+    });
+    toast('Opgeslagen');
+  });
   $('#claudeForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const d = formData(e.target);
@@ -1299,6 +1328,11 @@ function render() {
   lastRoute = location.hash;
 }
 
+// Terugkerend onderhoud: tickets aanmaken voor systemen die binnenkort aan de beurt zijn.
+if (store.get().settings.autoOnderhoud && store.get().assets.length) {
+  const n = createMaintenanceTickets();
+  if (n) setTimeout(() => toast(`${n} onderhoudsticket(s) aangemaakt volgens schema`), 600);
+}
 hooks.render = render;
 hooks.sync = () => runSync({ quiet: true });
 window.addEventListener('hashchange', render);

@@ -25,6 +25,10 @@ export const DEFAULT_SETTINGS = {
     { naam: 'Scent Pro', totM3: 1500, prijs: 1895, abonnement: 129 },
     { naam: 'Scent HVAC', totM3: 999999, prijs: 3950, abonnement: 249 },
   ],
+  bedrijf: { naam: 'Scentlinq Pro Benelux', adres: '', telefoon: '', email: '', kvk: '' },
+  monteur: '',            // naam op het servicerapport (per apparaat)
+  autoOnderhoud: true,    // onderhoudstickets automatisch aanmaken voor systemen met een interval
+  onderhoudVooruit: 14,   // zoveel dagen vóór de vervaldatum aanmaken
   claudeProxy: '',        // optioneel: eigen proxy voor de Anthropic API
   doelBezoekenWeek: 15,
   doelVerbruikMaand: 5000,
@@ -53,6 +57,8 @@ const empty = () => ({
   contracts: [],     // {id, nr, soort, omschrijving, perMaand, eenmalig, start, eind, opzegMnd, status, updatedAt, deleted}
   assets: [],        // {id, nr, systeem, serienummer, locatie, geplaatst, geur, laatsteOnderhoud, status, updatedAt, deleted}
   serviceRoutes: {}, // datum -> route (zelfde vorm als een planning)
+  stock: [],         // {id, naam, eenheid, voorraad, minimum, updatedAt, deleted}
+  stockMoves: [],    // {id, itemId, n, reden, datum, updatedAt}
   settings: structuredClone(DEFAULT_SETTINGS),
   lastSync: null,
   source: null,      // 'import' | 'm365'
@@ -66,7 +72,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return empty();
     const s = { ...empty(), ...JSON.parse(raw) };
-    s.settings = { ...DEFAULT_SETTINGS, ...s.settings, m365: { ...DEFAULT_SETTINGS.m365, ...(s.settings?.m365 || {}) } };
+    s.settings = { ...DEFAULT_SETTINGS, ...s.settings, m365: { ...DEFAULT_SETTINGS.m365, ...(s.settings?.m365 || {}) }, bedrijf: { ...DEFAULT_SETTINGS.bedrijf, ...(s.settings?.bedrijf || {}) } };
     return s;
   } catch {
     return empty();
@@ -311,10 +317,12 @@ export const CRM_SHEETS = {
   deals: { name: 'CRM_Deals', cols: ['id', 'nr', 'titel', 'fase', 'waarde', 'status', 'gesloten', 'updatedAt', 'deleted'] },
   activities: { name: 'CRM_Activiteiten', cols: ['id', 'nr', 'type', 'titel', 'datum', 'tijd', 'notitie', 'done', 'updatedAt', 'deleted'] },
   profiles: { name: 'CRM_Klantprofiel', cols: ['id', 'nr', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'm3', 'circulatie', 'systeem', 'aantal', 'flaconMl', 'status', 'labels', 'updatedAt'] },
-  tickets: { name: 'CRM_Tickets', cols: ['id', 'code', 'nr', 'assetId', 'type', 'prioriteit', 'status', 'titel', 'omschrijving', 'melder', 'gemeld', 'datum', 'tijd', 'duur', 'oplossing', 'gesloten', 'updatedAt', 'deleted'] },
+  tickets: { name: 'CRM_Tickets', cols: ['id', 'code', 'nr', 'assetId', 'type', 'prioriteit', 'status', 'titel', 'omschrijving', 'melder', 'gemeld', 'datum', 'tijd', 'duur', 'oplossing', 'gesloten', 'geslotenTijd', 'monteur', 'materiaal', 'fotos', 'handtekening', 'getekendDoor', 'updatedAt', 'deleted'] },
   contacts: { name: 'CRM_Contactpersonen', cols: ['id', 'nr', 'naam', 'functie', 'telefoon', 'email', 'primair', 'updatedAt', 'deleted'] },
   contracts: { name: 'CRM_Contracten', cols: ['id', 'nr', 'soort', 'omschrijving', 'perMaand', 'eenmalig', 'start', 'eind', 'opzegMnd', 'status', 'updatedAt', 'deleted'] },
-  assets: { name: 'CRM_Systemen', cols: ['id', 'nr', 'systeem', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'status', 'updatedAt', 'deleted'] },
+  assets: { name: 'CRM_Systemen', cols: ['id', 'nr', 'systeem', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'interval', 'status', 'updatedAt', 'deleted'] },
+  stock: { name: 'CRM_Voorraad', cols: ['id', 'naam', 'eenheid', 'voorraad', 'minimum', 'updatedAt', 'deleted'] },
+  stockMoves: { name: 'CRM_Voorraadmutaties', cols: ['id', 'itemId', 'n', 'reden', 'datum', 'updatedAt'] },
 };
 
 
@@ -324,9 +332,10 @@ function fromRow(cols, row) {
   o.done = o.done === true || o.done === 'TRUE' || o.done === 1;
   o.deleted = o.deleted === true || o.deleted === 'TRUE' || o.deleted === 1;
   if (o.waarde !== undefined) o.waarde = Number(o.waarde) || 0;
-  for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd']) if (k in o) o[k] = o[k] === null ? null : Number(o[k]) || null;
+  for (const k of ['m3', 'aantal', 'flaconMl', 'duur', 'perMaand', 'eenmalig', 'opzegMnd', 'interval', 'voorraad', 'minimum', 'n']) if (k in o) o[k] = o[k] === null || !Number.isFinite(Number(o[k])) ? null : Number(o[k]);
   if ('primair' in o) o.primair = o.primair === true || o.primair === 'TRUE' || o.primair === 1;
-  for (const k of ['code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
+  if (typeof o.fotos === 'string') o.fotos = o.fotos ? o.fotos.split(',') : [];
+  for (const k of ['eenheid', 'itemId', 'reden', 'geslotenTijd', 'monteur', 'materiaal', 'handtekening', 'getekendDoor', 'code', 'assetId', 'prioriteit', 'omschrijving', 'melder', 'gemeld', 'oplossing', 'naam', 'functie', 'telefoon', 'soort', 'start', 'eind', 'serienummer', 'locatie', 'geplaatst', 'geur', 'laatsteOnderhoud', 'labels']) {
     if (k in o && o[k] !== null) o[k] = String(o[k]);
   }
   for (const k of ['id', 'datum', 'tijd', 'gesloten', 'titel', 'notitie', 'type', 'fase', 'status', 'updatedAt', 'sector', 'keten', 'contactpersoon', 'email', 'geurprofiel', 'sfeer', 'circulatie', 'systeem']) {
@@ -481,4 +490,31 @@ export function softDelete(collection, id) {
     const x = s[collection].find((y) => y.id === id);
     if (x) { x.deleted = true; x.updatedAt = now(); }
   });
+}
+
+// ---------- terugkerend onderhoud ----------
+
+export function maintenanceDue(vooruit = state.settings.onderhoudVooruit) {
+  const today = todayISO();
+  const withTicket = new Set(state.tickets.filter((t) => isOpenTicket(t) && t.type === 'onderhoud' && t.assetId).map((t) => t.assetId));
+  return state.assets
+    .filter((a) => !a.deleted && a.status === 'actief' && Number(a.interval) > 0 && !withTicket.has(a.id))
+    .map((a) => {
+      const d = new Date((a.laatsteOnderhoud || a.geplaatst || today) + 'T12:00:00');
+      d.setMonth(d.getMonth() + Number(a.interval));
+      return { a, vervalt: todayISO(d) };
+    })
+    .filter((x) => daysBetween(today, x.vervalt) <= vooruit);
+}
+
+export function createMaintenanceTickets() {
+  const due = maintenanceDue();
+  for (const { a, vervalt } of due) {
+    newTicket({
+      nr: a.nr, assetId: a.id, type: 'onderhoud', prioriteit: vervalt < todayISO() ? 'hoog' : 'normaal',
+      titel: `Periodiek onderhoud ${a.systeem}${a.locatie ? ` (${a.locatie})` : ''}`,
+      omschrijving: `Elke ${a.interval} maanden. Vervalt ${vervalt}.`, melder: 'Onderhoudsschema',
+    });
+  }
+  return due.length;
 }
