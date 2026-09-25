@@ -1012,7 +1012,7 @@ function viewLogin() {
       <p class="muted">Scentlinq Pro Benelux · meld je aan om verder te gaan</p>
       <form id="dbLogin" class="card form">
         <label>Gebruikersnaam<input name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
-        <label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label>
+        <label>Wachtwoord of pincode<input name="password" type="password" autocomplete="current-password" required></label>
         <div class="actions"><button class="btn primary">Aanmelden</button></div>
         <p id="loginMsg" class="late small" role="alert"></p>
       </form>
@@ -1043,15 +1043,15 @@ function viewNewPassword() {
   return `
     <section class="login-screen">
       <h1>Welkom, ${h(db.user())}</h1>
-      <p class="muted">Je bent ingelogd met een tijdelijk wachtwoord. Kies nu je eigen wachtwoord.</p>
+      <p class="muted">Je bent ingelogd met een tijdelijke pincode. Kies een eigen wachtwoord, of doe dat later.</p>
       <form id="newPwForm" class="card form">
-        <label>Tijdelijk wachtwoord<input name="old" type="password" required autocomplete="current-password"></label>
+        <label>Pincode<input name="old" type="password" inputmode="numeric" required autocomplete="current-password"></label>
         <label>Nieuw wachtwoord (min. 10 tekens)<input name="nw" type="password" minlength="10" required autocomplete="new-password"></label>
         <label>Nieuw wachtwoord herhalen<input name="nw2" type="password" minlength="10" required autocomplete="new-password"></label>
         <div class="actions"><button class="btn primary">Opslaan en verder</button></div>
         <p id="pwMsg" class="late small" role="alert"></p>
       </form>
-      <button class="btn ghost" id="dbLogout" type="button">Afmelden</button>
+      <div class="actions"><button class="btn" id="pwLater" type="button">Later</button><button class="btn ghost" id="dbLogout" type="button">Afmelden</button></div>
     </section>`;
 }
 viewNewPassword.after = () => {
@@ -1069,6 +1069,13 @@ viewNewPassword.after = () => {
     }
   });
   $('#dbLogout').addEventListener('click', logoutNow);
+  $('#pwLater').addEventListener('click', async () => {
+    db.passwordLater();
+    if (!store.get().customers.length && db.needsFirstSync()) {
+      try { await db.firstSync('replace'); } catch (err) { toast(err.message, 5000); }
+    }
+    render();
+  });
 };
 
 function viewFirstSync() {
@@ -1124,12 +1131,21 @@ function dbSection() {
       ${st.error ? `<br><span class="late small">${h(st.error)}</span>` : ''}</p>
       <div class="actions left">
         <button class="btn primary" id="dbSync">⟳ Nu synchroniseren</button>
-        <button class="btn" id="dbPassword">Wachtwoord wijzigen</button>
+        <button class="btn" id="dbPassword">${db.usesTempPin() ? 'Eigen wachtwoord kiezen' : 'Wachtwoord wijzigen'}</button>
         <button class="btn ghost" id="dbLogout">Afmelden</button>
       </div>
+      ${db.usesTempPin() ? '<p class="warn-note small">Je logt nog in met een tijdelijke pincode. Kies een eigen wachtwoord.</p>' : ''}
       <p class="muted small">Alle gegevens staan in de gedeelde database en worden automatisch gesynchroniseerd. Bij afmelden worden ze van dit apparaat gewist. Foto's en handtekeningen blijven op het apparaat waar ze zijn gemaakt.</p>
     </section>
     ${db.isAdmin() ? '<section class="card" id="usersCard"><h2>Gebruikers</h2><p class="muted small">Laden…</p></section>' : ''}`;
+}
+
+function showPin(name, pin) {
+  openDialog(`
+    <h2>Pincode voor ${h(name)}</h2>
+    <p class="pin-code">${h(pin)}</p>
+    <p class="muted small">Geef deze pincode persoonlijk door. Hij wordt maar één keer getoond. ${h(name)} logt in met gebruikersnaam en pincode en kiest daarna een eigen wachtwoord.</p>
+    <div class="actions"><button value="ok" class="btn primary">Klaar</button></div>`, () => {});
 }
 
 async function loadUsers(data) {
@@ -1141,10 +1157,10 @@ async function loadUsers(data) {
       <h2>Gebruikers</h2>
       <ul class="list">${r.users.map((u) => `
         <li class="user-row">
-          <div><b>${h(u.username)}</b>${u.admin ? ' <span class="badge">beheerder</span>' : ''}<br>
+          <div><b>${h(u.username)}</b>${u.admin ? ' <span class="badge">beheerder</span>' : ''}${u.must_change ? ' <span class="badge">pincode</span>' : ''}<br>
           <span class="muted small">${u.last_seen ? 'Laatst actief ' + new Date(u.last_seen.replace(' ', 'T')).toLocaleDateString('nl-NL') : 'Nog niet aangemeld'}</span></div>
           <div class="actions">
-            <button class="btn small" data-upass="${u.id}" data-uname="${h(u.username)}">Nieuw wachtwoord</button>
+            <button class="btn small" data-upass="${u.id}" data-uname="${h(u.username)}">Nieuwe pincode</button>
             ${u.id === r.me ? '' : `<button class="btn small ghost" data-uadmin="${u.id}" data-val="${u.admin ? 0 : 1}">${u.admin ? 'Geen beheerder' : 'Maak beheerder'}</button>
             <button class="btn small ghost danger" data-udel="${u.id}" data-uname="${h(u.username)}">Verwijderen</button>`}
           </div>
@@ -1153,17 +1169,14 @@ async function loadUsers(data) {
     $('#userAdd').addEventListener('click', () => openDialog(`
       <h2>Gebruiker toevoegen</h2>
       <label>Gebruikersnaam<input name="username" required autocapitalize="none" autocomplete="off"></label>
-      <label>Wachtwoord (min. 10 tekens)<input name="password" type="password" minlength="10" required autocomplete="new-password"></label>
       <label class="inline"><input type="checkbox" name="admin"> Beheerder (mag gebruikers beheren)</label>
-      <p class="muted small">Geef het wachtwoord persoonlijk door; de gebruiker kan het daarna zelf wijzigen.</p>
+      <p class="muted small">De gebruiker krijgt een tijdelijke pincode van 6 cijfers. Geef die persoonlijk door; bij het inloggen kiest de gebruiker een eigen wachtwoord.</p>
       <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Toevoegen</button></div>`,
-      async (d) => { try { await loadUsers(await db.addUser(d.username.trim(), d.password, !!d.admin)); toast('Gebruiker toegevoegd'); } catch (e) { toast(e.message, 5000); } }));
-    $$('[data-upass]', card).forEach((b) => b.addEventListener('click', () => openDialog(`
-      <h2>Nieuw wachtwoord voor ${h(b.dataset.uname)}</h2>
-      <label>Wachtwoord (min. 10 tekens)<input name="password" type="password" minlength="10" required autocomplete="new-password"></label>
-      <p class="muted small">${h(b.dataset.uname)} wordt op alle apparaten afgemeld.</p>
-      <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Opslaan</button></div>`,
-      async (d) => { try { await loadUsers(await db.updateUser(Number(b.dataset.upass), { password: d.password })); toast('Wachtwoord gewijzigd'); } catch (e) { toast(e.message, 5000); } })));
+      async (d) => { try { const r = await db.addUser(d.username.trim(), '', !!d.admin); await loadUsers(r); showPin(d.username.trim(), r.pin); } catch (e) { toast(e.message, 5000); } }));
+    $$('[data-upass]', card).forEach((b) => b.addEventListener('click', async () => {
+      if (!(await ask(`Nieuwe pincode maken voor ${b.dataset.uname}? Het huidige wachtwoord werkt dan niet meer en ${b.dataset.uname} wordt op alle apparaten afgemeld.`, 'Pincode maken'))) return;
+      try { const r = await db.resetPin(Number(b.dataset.upass)); await loadUsers(r); showPin(b.dataset.uname, r.pin); } catch (e) { toast(e.message, 5000); }
+    }));
     $$('[data-uadmin]', card).forEach((b) => b.addEventListener('click', async () => {
       try { await loadUsers(await db.updateUser(Number(b.dataset.uadmin), { admin: b.dataset.val === '1' })); } catch (e) { toast(e.message, 5000); }
     }));
@@ -1323,7 +1336,7 @@ viewMeer.after = async () => {
   $('#dbLogout')?.addEventListener('click', logoutNow);
   $('#dbPassword')?.addEventListener('click', () => openDialog(`
     <h2>Wachtwoord wijzigen</h2>
-    <label>Huidig wachtwoord<input name="old" type="password" required autocomplete="current-password"></label>
+    <label>Huidig wachtwoord of pincode<input name="old" type="password" required autocomplete="current-password"></label>
     <label>Nieuw wachtwoord (min. 10 tekens)<input name="nw" type="password" minlength="10" required autocomplete="new-password"></label>
     <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Wijzigen</button></div>`,
     async (d) => { try { await db.changePassword(d.old, d.nw); toast('Wachtwoord gewijzigd'); } catch (e) { toast(e.message, 5000); } }));

@@ -468,3 +468,6 @@ body.as-open .as-fab { transform: rotate(45deg) scale(.9); }
 .as-form { display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom) * 0); border-top: 1px solid var(--line); align-items: flex-end; }
 .as-form textarea { flex: 1; resize: none; min-height: 44px; max-height: 140px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .as-form textarea:focus { outline: 2px solid var(--brand); outline-offset: 0; }
+
+.pin-code { font-size: 2.2rem; font-weight: 700; letter-spacing: .3em; text-align: center; margin: 12px 0; font-variant-numeric: tabular-nums; }
+.warn-note { background: var(--warn-bg); color: var(--warn-ink); padding: 8px 10px; border-radius: 10px; }

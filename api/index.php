@@ -48,7 +48,8 @@ try {
       $name = trim((string)($in['username'] ?? ''));
       $pass = (string)($in['password'] ?? '');
       if (!preg_match('/^[A-Za-z0-9._@-]{2,80}$/', $name)) fail(400, 'Gebruikersnaam: 2–80 tekens, letters, cijfers en . _ @ -');
-      if (strlen($pass) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
+      if ($pass === '') $pin = $pass = tempPin(); // leeg = tijdelijke pincode
+      elseif (strlen($pass) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
       $st = db()->prepare('SELECT COUNT(*) FROM kk_users WHERE username = ?');
       $st->execute([$name]);
       if ($st->fetchColumn()) fail(409, 'Die gebruikersnaam bestaat al');
@@ -56,8 +57,9 @@ try {
         ->execute([$name, password_hash($pass, PASSWORD_DEFAULT), empty($in['admin']) ? 0 : 1, date('Y-m-d H:i:s')]);
     } elseif ($action === 'user_update') {
       $id = (int)($in['id'] ?? 0);
+      if (!empty($in['pin'])) $in['password'] = $pin = tempPin();
       if (isset($in['password'])) {
-        if (strlen((string)$in['password']) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
+        if (!isset($pin) && strlen((string)$in['password']) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
         db()->prepare('UPDATE kk_users SET pass_hash = ?, failed = 0, locked_until = NULL, must_change = 1 WHERE id = ?')->execute([password_hash((string)$in['password'], PASSWORD_DEFAULT), $id]);
         db()->prepare('DELETE FROM kk_tokens WHERE user_id = ?')->execute([$id]);
       }
@@ -71,9 +73,9 @@ try {
       db()->prepare('DELETE FROM kk_tokens WHERE user_id = ?')->execute([$id]);
       db()->prepare('DELETE FROM kk_users WHERE id = ?')->execute([$id]);
     }
-    $rows = db()->query('SELECT id, username, admin, created_at, (SELECT MAX(last_used) FROM kk_tokens t WHERE t.user_id = u.id) AS last_seen FROM kk_users u ORDER BY username')->fetchAll();
-    foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['admin'] = (bool)$r['admin']; }
-    out(['users' => $rows, 'me' => (int)$user['id']]);
+    $rows = db()->query('SELECT id, username, admin, must_change, created_at, (SELECT MAX(last_used) FROM kk_tokens t WHERE t.user_id = u.id) AS last_seen FROM kk_users u ORDER BY username')->fetchAll();
+    foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['admin'] = (bool)$r['admin']; $r['must_change'] = (bool)$r['must_change']; }
+    out(['users' => $rows, 'me' => (int)$user['id']] + (isset($pin) ? ['pin' => $pin] : []));
   }
 
   if ($action === 'sync') {

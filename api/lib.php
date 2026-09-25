@@ -100,10 +100,9 @@ function checkPassword(string $username, string $password): ?array {
   return $u;
 }
 
-// Eenvoudig te typen tijdelijk wachtwoord, bv. geur-4821-zon (≥ 10 tekens, willekeurig).
-function tempPassword(): string {
-  $words = ['zon', 'geur', 'roos', 'mint', 'vanille', 'ceder', 'lotus', 'amber', 'citrus', 'jasmijn', 'bries', 'zee'];
-  return $words[random_int(0, count($words) - 1)] . '-' . random_int(1000, 9999) . '-' . $words[random_int(0, count($words) - 1)];
+// Tijdelijke pincode van 6 cijfers (willekeurig). Raden wordt afgeremd door de blokkade na 8 mislukte pogingen.
+function tempPin(): string {
+  return sprintf('%06d', random_int(0, 999999));
 }
 
 function newToken(int $userId): string {

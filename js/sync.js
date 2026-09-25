@@ -33,11 +33,16 @@ export const token = () => { try { return localStorage.getItem(TOKEN_KEY) || '';
 // Heeft de server een Anthropic-sleutel? Dan werkt Claude zonder eigen sleutel.
 export const serverClaude = () => isSignedIn() && !!dbState.claude;
 export const isAdmin = () => isSignedIn() && !!dbState.admin;
-export const mustChangePassword = () => isSignedIn() && !!dbState.mustChange;
+// Ingelogd met een tijdelijke pincode: vraag om een eigen wachtwoord (mag per sessie worden overgeslagen).
+export const mustChangePassword = () => isSignedIn() && !!dbState.mustChange && !skipPw();
+const skipPw = () => { try { return sessionStorage.getItem('klantkaart.pwLater') === '1'; } catch { return false; } };
+export const usesTempPin = () => isSignedIn() && !!dbState.mustChange;
+export function passwordLater() { try { sessionStorage.setItem('klantkaart.pwLater', '1'); } catch {} }
 
 // Gebruikersbeheer en wachtwoord (api/index.php).
 export const users = () => call('users');
 export const addUser = (username, password, admin) => call('user_add', { username, password, admin });
+export const resetPin = (id) => call('user_update', { id, pin: true });
 export const updateUser = (id, fields) => call('user_update', { id, ...fields });
 export const deleteUser = (id) => call('user_delete', { id });
 export async function changePassword(old, nw) {
