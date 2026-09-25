@@ -27,7 +27,7 @@ try {
 
   if ($action === 'me') {
     $n = (int)db()->query("SELECT COUNT(*) FROM kk_docs WHERE deleted = 0 AND coll = 'customers'")->fetchColumn();
-    out(['user' => $user['username'], 'admin' => (bool)$user['admin'], 'klanten' => $n]);
+    out(['user' => $user['username'], 'admin' => (bool)$user['admin'], 'klanten' => $n, 'claude' => !empty(config()['anthropic_key'])]);
   }
 
   if ($action === 'sync') {
@@ -64,7 +64,7 @@ try {
     $next = $rows ? (int)end($rows)['rev'] : $cursor;
     if (!$more) $next = max($next, $last, $cursor);
     foreach ($rows as &$r) { $r['del'] = (bool)$r['del']; unset($r['rev']); }
-    out(['cursor' => $next, 'more' => $more, 'changes' => $rows, 'written' => count($changes)]);
+    out(['cursor' => $next, 'more' => $more, 'changes' => $rows, 'written' => count($changes), 'claude' => !empty(config()['anthropic_key'])]);
   }
 
   fail(404, 'Onbekende actie');

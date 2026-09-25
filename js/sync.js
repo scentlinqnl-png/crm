@@ -25,11 +25,13 @@ const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 let dbState = read(STATE_KEY, { cursor: 0, user: '', hashes: {} });
 const saveState = () => write(STATE_KEY, dbState);
-const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } };
 
 export const isSignedIn = () => !!token();
 export const needsFirstSync = () => isSignedIn() && !!dbState.setup;
 export const user = () => dbState.user;
+export const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } };
+// Heeft de server een Anthropic-sleutel? Dan werkt Claude zonder eigen sleutel.
+export const serverClaude = () => isSignedIn() && !!dbState.claude;
 export const getStatus = () => ({ ...status, pending: pendingCount() });
 export function onStatus(fn) { listeners.push(fn); }
 const receivers = [];
@@ -140,6 +142,7 @@ export async function syncNow({ pullOnly = false, first = false } = {}) {
         received += r.changes.length;
       }
       dbState.cursor = r.cursor;
+      dbState.claude = !!r.claude;
       saveState();
       changes = [];
       if (!r.more) break;
@@ -167,7 +170,10 @@ export async function login(username, password) {
   try { localStorage.setItem(TOKEN_KEY, r.token); } catch {}
   dbState = { cursor: 0, user: r.user, hashes: {}, setup: true };
   saveState();
-  return call('me');
+  const me = await call('me');
+  dbState.claude = !!me.claude;
+  saveState();
+  return me;
 }
 
 // Na het aanmelden: gegevens van de server overnemen (lokaal vervangen) of samenvoegen.

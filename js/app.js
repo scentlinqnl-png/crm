@@ -19,7 +19,7 @@ import { shareOrDownloadQuote } from './report.js';
 import { viewImport } from './import.js';
 import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
-import { planWithClaude, klantBriefing, claudeReady, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
+import { planWithClaude, klantBriefing, claudeReady, claudeConfigured, claudeViaServer, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
 
 import {
   $, $$, dialog, h, eur, ml, fmtDate, klassBadge, telHref, navHref, toast, weekStart, nextWorkday,
@@ -1122,6 +1122,7 @@ function viewMeer() {
     <section class="card form">
       <h2>Claude</h2>
       <p class="muted small">Met Claude kun je in Planning een dag laten samenstellen in gewone taal. Claude krijgt daarvoor per klant naam, plaats, afstand, bezoekhistorie, classificatie, navulmoment, sector en open deals/activiteiten mee. Model: <code>${h(CLAUDE_MODEL)}</code>.</p>
+      ${claudeViaServer() ? `<p>✓ Claude werkt via de server van deze app. Je hebt geen eigen sleutel nodig.</p>` : db.isSignedIn() && !claudeConfigured() ? '<p class="muted small">De server heeft nog geen Claude-sleutel. Een beheerder kan <code>anthropic_key</code> invullen in <code>api/config.php</code>; dan werkt Claude voor iedereen die is aangemeld.</p>' : ''}
       <form id="claudeForm">
         <label>Anthropic API-sleutel<input name="key" type="password" autocomplete="off" value="${h(getClaudeKey())}" placeholder="sk-ant-…"></label>
         <label>Of: proxy-URL (sleutel blijft op je eigen server)<input name="proxy" type="url" value="${h(s.settings.claudeProxy || '')}" placeholder="https://…"></label>
@@ -1188,6 +1189,7 @@ viewMeer.after = async () => {
     btn.disabled = true;
     try {
       const me = await db.login(d.username.trim(), d.password);
+      resetClaudeClient();
       const local = store.get().customers.length;
       if (!local || !me.klanten) {
         await db.firstSync(local ? 'merge' : 'replace');
@@ -1216,6 +1218,7 @@ viewMeer.after = async () => {
     const p = db.getStatus().pending;
     if (p && !(await ask(`Er wachten nog ${p} wijziging(en) op verzending. Toch afmelden? Ze blijven op dit apparaat staan.`, 'Afmelden'))) return;
     await db.logout();
+    resetClaudeClient();
     render();
   });
   $('#importFile').addEventListener('change', async (e) => {

@@ -6,4 +6,7 @@ return [
   'db_name' => 'c188lupzh_scentlinq',
   'db_user' => 'c188lupzh_scentlinq',
   'db_pass' => 'VUL_IN',
+  // Optioneel: Claude voor alle aangemelde gebruikers. Sleutel van platform.claude.com (begint met sk-ant-).
+  'anthropic_key' => '',
+  'claude_daily_limit' => 200,  // max. Claude-verzoeken per gebruiker per dag
 ];

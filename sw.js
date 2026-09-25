@@ -1,5 +1,5 @@
 // Service worker: app-shell offline beschikbaar. Microsoft/Graph/OSM-verkeer gaat altijd naar het netwerk.
-const CACHE = 'klantkaart-v16';
+const CACHE = 'klantkaart-v17';
 const SHELL = [
   './', 'index.html', 'auth.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/store.js', 'js/planner.js', 'js/graph.js', 'js/excel.js', 'js/geo.js', 'js/demo.js', 'js/claude.js', 'js/ui.js', 'js/service.js', 'js/crm.js', 'js/media.js', 'js/report.js', 'js/stock.js', 'js/quotes.js', 'js/import.js', 'js/voorraad.js', 'js/intake.js', 'js/qr.js', 'js/melden.js', 'melden.html', 'js/auth-page.js', 'js/sync.js',

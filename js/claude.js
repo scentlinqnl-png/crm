@@ -1,6 +1,7 @@
 // Dagplanning door Claude (Anthropic API) op basis van de klantenlijst en een vrije opdracht.
 import { store, todayISO } from './store.js';
 import { candidateSummary, planFromSelection } from './planner.js';
+import * as db from './sync.js';
 
 const KEY_STORAGE = 'klantkaart.claudeKey';
 export const CLAUDE_MODEL = 'claude-opus-5';
@@ -15,8 +16,10 @@ export function setClaudeKey(key) {
   } catch {}
 }
 
-// Koppeling is actief met een eigen API-sleutel, of via een proxy-URL (sleutel blijft dan op de server).
-export const claudeConfigured = () => !!(getClaudeKey() || store.get().settings.claudeProxy);
+// Koppeling is actief met een eigen API-sleutel, via een proxy-URL, of via de eigen server na aanmelden
+// bij de gedeelde database (api/claude.php; de sleutel blijft dan op de server).
+export const claudeViaServer = () => !getClaudeKey() && !store.get().settings.claudeProxy && db.serverClaude();
+export const claudeConfigured = () => !!(getClaudeKey() || store.get().settings.claudeProxy || db.serverClaude());
 
 // Op claude.ai (voorbeeldweergave) kan de pagina Claude zelf vragen, zonder API-sleutel.
 let pageSamplePromise = null;
@@ -46,6 +49,14 @@ async function client() {
   if (!clientPromise) {
     clientPromise = import('../vendor/anthropic-sdk.mjs').then(({ default: Anthropic }) => {
       const proxy = store.get().settings.claudeProxy;
+      if (claudeViaServer()) {
+        return new Anthropic({
+          apiKey: 'via-server',
+          baseURL: new URL('api/claude.php', location.href).href,
+          defaultHeaders: { 'x-auth-token': db.token() },
+          dangerouslyAllowBrowser: true,
+        });
+      }
       return new Anthropic({
         apiKey: getClaudeKey() || 'via-proxy',
         ...(proxy ? { baseURL: proxy } : {}),
@@ -136,7 +147,7 @@ async function askClaude({ system, user, schema, example, signal, effort = 'medi
       throw new Error(SAMPLE_ERRORS[e?.code] || e?.message || 'Claude is nu niet bereikbaar. Probeer het later opnieuw.');
     }
   }
-  if (!claudeConfigured()) throw new Error('Koppel Claude eerst via Meer › Claude (API-sleutel of proxy).');
+  if (!claudeConfigured()) throw new Error('Koppel Claude eerst via Meer › Claude (API-sleutel of proxy), of meld je aan bij de gedeelde database.');
 
   const anthropic = await client();
   const response = await anthropic.beta.messages.create({
