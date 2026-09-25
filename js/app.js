@@ -14,7 +14,7 @@ import { calcQuote, saveQuote, setQuoteStatus, acceptQuote, QUOTE_STATUS, LEASE_
 import { shareOrDownloadQuote } from './report.js';
 import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
-import { planWithClaude, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
+import { planWithClaude, klantBriefing, claudeReady, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
 
 import {
   $, $$, dialog, h, eur, ml, fmtDate, klassBadge, telHref, navHref, toast, weekStart, nextWorkday,
@@ -453,6 +453,7 @@ function viewKlant(nr) {
         ${tel ? `<a class="btn" href="${h(tel)}">📞 Bellen</a>` : ''}
         <a class="btn" href="${h(navHref(c))}" target="_blank" rel="noopener">🧭 Route</a>
         <a class="btn primary" href="#/bezoek?nr=${h(c.nr)}">+ Bezoek</a>
+        ${claudeReady() ? '<button class="btn" id="briefing">✨ Briefing</button>' : ''}
         <button class="btn" id="pin">${s.pinned.map(String).includes(String(c.nr)) ? '📌 Ingepland' : '📌 Inplannen'}</button>
       </div>
       <dl class="details">
@@ -515,6 +516,7 @@ viewKlant.after = (nr) => {
   $$('[data-deal]').forEach((el) => el.addEventListener('click', () => dealDialog(store.get().deals.find((d) => d.id === el.dataset.deal))));
   bindActivityList(view);
   $('#editProfile')?.addEventListener('click', () => profileDialog(nr));
+  $('#briefing')?.addEventListener('click', () => briefingDialog(nr));
   bindKlantCrm(nr);
   $('#proef')?.addEventListener('click', () => activityDialog({ nr, type: 'demo', titel: 'Proefplaatsing ' + (profile(nr).geurprofiel || 'geursample') }));
   $('#pin')?.addEventListener('click', () => {
@@ -1166,6 +1168,26 @@ viewMeer.after = async () => {
     } catch {}
   }
 };
+
+function briefingDialog(nr) {
+  const ctl = new AbortController();
+  openDialog(`
+    <h2>✨ Briefing: ${h(customer(nr).naam)}</h2>
+    <div id="briefBody"><p class="muted">Claude leest de klantkaart… (meestal 10–30 seconden)</p></div>
+    <div class="actions"><button value="cancel" class="btn primary" formnovalidate>Sluiten</button></div>`, () => {});
+  dialog.addEventListener('close', () => ctl.abort(), { once: true });
+  klantBriefing(nr, { signal: ctl.signal }).then((b) => {
+    const el = $('#briefBody');
+    if (!el) return;
+    el.innerHTML = `<p>${h(b.samenvatting)}</p>
+      ${b.aandachtspunten?.length ? `<h3>Aandachtspunten</h3><ul>${b.aandachtspunten.map((x) => `<li>${h(x)}</li>`).join('')}</ul>` : ''}
+      ${b.gespreksonderwerpen?.length ? `<h3>Om te bespreken</h3><ul>${b.gespreksonderwerpen.map((x) => `<li>${h(x)}</li>`).join('')}</ul>` : ''}
+      <p class="muted small">Gemaakt door Claude op basis van de klantkaart. Controleer belangrijke details.</p>`;
+  }).catch((e) => {
+    const el = $('#briefBody');
+    if (el && e.name !== 'AbortError') el.innerHTML = `<p class="alert">${h(e.message)}</p>`;
+  });
+}
 
 function profileDialog(nr) {
   const s = store.get();

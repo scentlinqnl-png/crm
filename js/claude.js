@@ -26,6 +26,11 @@ export function pageSample() {
   return pageSamplePromise;
 }
 
+let pageOk = false;
+pageSample().then((x) => { pageOk = !!x; });
+// Is Claude bruikbaar in deze weergave (eigen sleutel/proxy of via claude.ai)?
+export const claudeReady = () => claudeConfigured() || pageOk;
+
 const SAMPLE_ERRORS = {
   not_granted: 'Je hebt deze pagina geen toestemming gegeven om Claude te gebruiken.',
   sampling_disabled: 'Claude is niet beschikbaar voor dit account.',
@@ -117,16 +122,15 @@ function toPlan(datum, answer) {
   });
 }
 
-export async function planWithClaude({ datum, opdracht, signal }) {
-  // Voorbeeldweergave op claude.ai: vraag het aan Claude via de pagina zelf.
+// Eén vraag aan Claude met een vast JSON-antwoordformaat: via de API (sleutel/proxy) of, op claude.ai, via de pagina.
+async function askClaude({ system, user, schema, example, signal, effort = 'medium' }) {
   const sample = claudeConfigured() ? null : await pageSample();
   if (sample) {
     try {
-      const answer = await sample.json(
-        `${systemPrompt()}\n\nAntwoord uitsluitend met één JSON-object volgens dit schema: ${JSON.stringify(SCHEMA)}\nVoorbeeld: {"startTijd":"09:00","stops":[{"nr":12,"reden":"navulling nodig binnen 3 dagen"}],"toelichting":"..."}\n\n${userPrompt(datum, opdracht)}`,
+      return await sample.json(
+        `${system}\n\nAntwoord uitsluitend met één JSON-object volgens dit schema: ${JSON.stringify(schema)}${example ? `\nVoorbeeld: ${example}` : ''}\n\n${user}`,
         { modelTier: 'complex', cache: false, signal }
       );
-      return toPlan(datum, answer);
     } catch (e) {
       if (e?.code === 'cancelled') throw new Error('Gestopt.');
       throw new Error(SAMPLE_ERRORS[e?.code] || e?.message || 'Claude is nu niet bereikbaar. Probeer het later opnieuw.');
@@ -139,14 +143,114 @@ export async function planWithClaude({ datum, opdracht, signal }) {
     model: CLAUDE_MODEL,
     max_tokens: 16000,
     thinking: { type: 'adaptive' },
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
+    output_config: { effort, format: { type: 'json_schema', schema } },
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: systemPrompt(),
-    messages: [{ role: 'user', content: userPrompt(datum, opdracht) }],
+    system,
+    messages: [{ role: 'user', content: user }],
   }, { signal });
-  if (response.stop_reason === 'refusal') throw new Error('Claude kon deze planning niet maken. Pas de opdracht aan.');
+  if (response.stop_reason === 'refusal') throw new Error('Claude kon hier geen antwoord op geven. Pas de vraag aan.');
   if (response.stop_reason === 'max_tokens') throw new Error('Het antwoord van Claude was te lang. Probeer het opnieuw.');
-  const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return toPlan(datum, parseAnswer(text));
+  return parseAnswer(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
+}
+
+export async function planWithClaude({ datum, opdracht, signal }) {
+  const answer = await askClaude({
+    system: systemPrompt(),
+    user: userPrompt(datum, opdracht),
+    schema: SCHEMA,
+    example: '{"startTijd":"09:00","stops":[{"nr":12,"reden":"navulling nodig binnen 3 dagen"}],"toelichting":"..."}',
+    signal,
+  });
+  return toPlan(datum, answer);
+}
+
+// ---------- helpdeskdag plannen ----------
+
+const SERVICE_SCHEMA = {
+  type: 'object',
+  properties: {
+    tickets: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { code: { type: 'string' }, reden: { type: 'string', description: 'Korte reden, max. 12 woorden' } },
+        required: ['code', 'reden'],
+        additionalProperties: false,
+      },
+    },
+    toelichting: { type: 'string', description: 'Twee of drie zinnen over de keuze en de route' },
+  },
+  required: ['tickets', 'toelichting'],
+  additionalProperties: false,
+};
+
+export async function planServiceWithClaude({ datum, opdracht, signal }) {
+  const s = store.get();
+  const st = s.settings;
+  const open = s.tickets.filter((t) => !t.deleted && !['opgelost', 'gesloten'].includes(t.status) && (!t.datum || t.datum === datum || t.datum < datum));
+  if (!open.length) throw new Error('Er zijn geen open tickets om in te plannen.');
+  const rows = open.map((t) => {
+    const c = s.customers.find((x) => String(x.nr) === String(t.nr)) || {};
+    return { code: t.code, klant: c.naam, plaats: c.plaats, km_vanaf_start: c.km, type: t.type, prioriteit: t.prioriteit, duur_min: t.duur, gemeld: t.gemeld, al_ingepland_op: t.datum || undefined, titel: t.titel };
+  });
+  const system = `Je bent de planner van de helpdesk/buitendienst van Scentlinq Pro Benelux (geurmachines: storingen, navullingen, onderhoud, installaties).
+Kies uit de open tickets een haalbare werkdag.
+- Start en eindpunt ${st.startPlaats}. Werktijd ${st.startTijd}–${st.eindTijd}. Tel de duur van elk ticket plus reistijd (ca. ${st.snelheid} km/u).
+- Spoed eerst, dan hoog, dan tickets die al lang open staan. Tickets die al op deze datum staan horen erbij tenzij het niet past.
+- Groepeer op plaats/regio zodat de route logisch is; meerdere tickets bij dezelfde klant samen.
+- Gebruik alleen ticketcodes uit de lijst.
+De app berekent zelf de volgorde en de tijden.`;
+  const d = new Date(datum + 'T12:00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  const answer = await askClaude({
+    system,
+    user: `Datum: ${d} (${datum}). Opdracht: ${opdracht?.trim() || 'Stel de beste helpdeskdag samen.'}\n\nOpen tickets (JSON):\n${JSON.stringify(rows)}`,
+    schema: SERVICE_SCHEMA,
+    example: '{"tickets":[{"code":"T-0012","reden":"spoed, zelfde regio"}],"toelichting":"..."}',
+    signal,
+  });
+  const codes = new Set(open.map((t) => t.code));
+  const tickets = (answer.tickets || []).filter((x) => codes.has(x.code));
+  if (!tickets.length) throw new Error('Claude koos geen bestaande tickets. Probeer het opnieuw.');
+  return { datum, tickets, toelichting: answer.toelichting || '' };
+}
+
+// ---------- briefing vóór een klantbezoek ----------
+
+const BRIEF_SCHEMA = {
+  type: 'object',
+  properties: {
+    samenvatting: { type: 'string', description: 'Drie tot vijf zinnen: wie is deze klant en hoe staat de relatie ervoor' },
+    aandachtspunten: { type: 'array', items: { type: 'string' }, description: 'Maximaal 5 concrete punten voor dit bezoek' },
+    gespreksonderwerpen: { type: 'array', items: { type: 'string' }, description: 'Maximaal 4 kansen of vragen om te bespreken' },
+  },
+  required: ['samenvatting', 'aandachtspunten', 'gespreksonderwerpen'],
+  additionalProperties: false,
+};
+
+export async function klantBriefing(nr, { signal } = {}) {
+  const s = store.get();
+  const eq = (x) => String(x.nr) === String(nr) && !x.deleted;
+  const c = s.customers.find((x) => String(x.nr) === String(nr));
+  const p = s.profiles.find((x) => String(x.nr) === String(nr)) || {};
+  const data = {
+    klant: { naam: c.naam, plaats: c.plaats, km_vanaf_start: c.km, notitie: c.notitie || undefined },
+    profiel: { sector: p.sector, keten: p.keten, status: p.status, labels: p.labels, geurprofiel: p.geurprofiel, sfeer: p.sfeer, ruimte_m3: p.m3, systeem: p.systeem },
+    contactpersonen: s.contacts.filter(eq).map((x) => ({ naam: x.naam, functie: x.functie, primair: x.primair })),
+    bezoeken: s.visits.filter((v) => String(v.nr) === String(nr)).sort((a, b) => b.datum.localeCompare(a.datum)).slice(0, 10).map((v) => ({ datum: v.datum, ml: v.ml, geur: v.geur, instellingen: v.instellingen, opmerking: v.opmerking })),
+    contracten: s.contracts.filter(eq).map((x) => ({ soort: x.soort, omschrijving: x.omschrijving, per_maand: x.perMaand, start: x.start, eind: x.eind, status: x.status })),
+    systemen: s.assets.filter(eq).map((a) => ({ systeem: a.systeem, locatie: a.locatie, status: a.status, laatste_onderhoud: a.laatsteOnderhoud })),
+    tickets: s.tickets.filter(eq).slice(-8).map((t) => ({ code: t.code, type: t.type, status: t.status, titel: t.titel, oplossing: t.oplossing, gemeld: t.gemeld })),
+    deals: s.deals.filter(eq).map((d) => ({ titel: d.titel, fase: d.fase, status: d.status, waarde: d.waarde })),
+    offertes: (s.quotes || []).filter(eq).map((q) => ({ code: q.code, status: q.status, per_maand: q.perMaand, datum: q.datum })),
+    open_activiteiten: s.activities.filter((a) => eq(a) && !a.done).map((a) => ({ type: a.type, titel: a.titel, datum: a.datum })),
+  };
+  return askClaude({
+    system: 'Je bereidt een buitendienstmedewerker van Scentlinq Pro Benelux (geurmarketing) voor op een klantbezoek. Schrijf in het Nederlands, zakelijk en concreet. Baseer je alleen op de gegevens; verzin niets.',
+    user: `Vandaag is ${todayISO()}. Klantgegevens (JSON):\n${JSON.stringify(data)}`,
+    schema: BRIEF_SCHEMA,
+    example: '{"samenvatting":"...","aandachtspunten":["..."],"gespreksonderwerpen":["..."]}',
+    effort: 'low',
+    signal,
+  });
 }

@@ -8,6 +8,7 @@ import { planFromSelection, mapsRouteUrl } from './planner.js';
 import { putBlob, getBlob, deleteBlob, compressImage, signaturePad } from './media.js';
 import { shareOrDownloadReport } from './report.js';
 import { activatePlannedAssets } from './quotes.js';
+import { planServiceWithClaude, claudeReady } from './claude.js';
 import { consumeStock, adjustStock, activeStock, lowStock, materialText, seedStock } from './stock.js';
 import { $, $$, h, fmtDate, toast, weekStart, openDialog, klantOptions, hooks } from './ui.js';
 
@@ -385,6 +386,30 @@ function buildRoute(datum) {
   return { plan, perKlant };
 }
 
+let svcAsk = '';
+let svcBusy = false;
+let svcStatus = '';
+let svcProposal = null;
+let svcCtl = null;
+
+function claudeServiceCard(datum) {
+  if (!claudeReady()) return '';
+  const prop = svcProposal?.datum === datum ? svcProposal : null;
+  const byCode = new Map(store.get().tickets.map((t) => [t.code, t]));
+  return `<section class="card form claude-card">
+    <h2>✨ Helpdeskdag met Claude</h2>
+    <label>Wensen voor deze dag<textarea id="svcAsk" rows="2" placeholder="bijv. Eerst de spoedstoring, daarna alles in Zeeland, om 15:00 terug">${h(svcAsk)}</textarea></label>
+    <div class="actions left">
+      <button class="btn primary" id="svcPlan" type="button" ${svcBusy ? 'disabled' : ''}>${svcBusy ? 'Claude plant…' : 'Laat Claude kiezen'}</button>
+      ${svcBusy ? '<button class="btn ghost" id="svcStop" type="button">Stop</button>' : ''}
+    </div>
+    <p class="muted small">${h(svcStatus)}</p>
+    ${prop ? `<p class="claude-note">${h(prop.toelichting)}</p>
+      <ul class="list tickets">${prop.tickets.map((x) => { const t = byCode.get(x.code); return t ? `<li><label class="inline grow"><input type="checkbox" data-prop="${h(t.id)}" checked> <span><span class="code">${h(t.code)}</span> ${typeIcon(t.type)} ${h(t.titel)} <span class="sub">${h(customer(t.nr)?.naam || '')} · ${h(x.reden)}</span></span></label>${prioBadge(t.prioriteit)}</li>` : ''; }).join('')}</ul>
+      <div class="actions left"><button class="btn primary" id="svcApply">Inplannen op ${fmtDate(datum)}</button></div>` : ''}
+  </section>`;
+}
+
 function route(params) {
   const s = store.get();
   const datum = params.get('d') || todayISO();
@@ -394,6 +419,7 @@ function route(params) {
     <section class="card form">
       <label>Datum<input type="date" id="routeDate" value="${h(datum)}"></label>
     </section>
+    ${claudeServiceCard(datum)}
     ${plan ? `
       <section class="card">
         <h2>Helpdeskroute ${fmtDate(datum)}</h2>
@@ -473,6 +499,32 @@ viewService.after = (params) => {
       for (const st of plan.stops) for (const t of perKlant.get(String(st.nr)) || []) { t.tijd = st.aankomst; t.updatedAt = now(); }
     });
     toast('Tijden bijgewerkt in de tickets');
+    hooks.render();
+    hooks.sync();
+  });
+  $('#svcAsk')?.addEventListener('input', (e) => { svcAsk = e.target.value; });
+  $('#svcStop')?.addEventListener('click', () => svcCtl?.abort());
+  $('#svcPlan')?.addEventListener('click', async () => {
+    svcBusy = true;
+    svcStatus = 'Claude bekijkt de open tickets. Dit duurt meestal 20 tot 60 seconden.';
+    svcCtl = new AbortController();
+    hooks.render();
+    try {
+      svcProposal = await planServiceWithClaude({ datum: dateEl.value, opdracht: svcAsk, signal: svcCtl.signal });
+      svcStatus = '';
+    } catch (e) {
+      svcStatus = e.name === 'AbortError' ? 'Gestopt.' : e.message;
+    } finally {
+      svcBusy = false;
+      svcCtl = null;
+      hooks.render();
+    }
+  });
+  $('#svcApply')?.addEventListener('click', () => {
+    const ids = $$('[data-prop]').filter((c) => c.checked).map((c) => c.dataset.prop);
+    store.update((s) => s.tickets.filter((t) => ids.includes(t.id)).forEach((t) => { t.datum = dateEl.value; t.status = t.status === 'nieuw' ? 'ingepland' : t.status; t.updatedAt = now(); }));
+    svcProposal = null;
+    toast(`${ids.length} ticket(s) ingepland`);
     hooks.render();
     hooks.sync();
   });
