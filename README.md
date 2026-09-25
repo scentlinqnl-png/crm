@@ -43,6 +43,24 @@ Nog niet gebouwd (vervolgstappen): partner-/distributeursdashboard, meertalige c
 SDS/certificaten automatisch bij de offerte, koppeling met field-service-software, looptijd-
 (vernevelingsuren) i.p.v. ml als basis voor navullen.
 
+## Plan met Claude
+
+In **Planning** staat de kaart *✨ Plan met Claude*. Typ in gewone taal wat je wilt, bijvoorbeeld
+"Richting Rotterdam, eerste afspraak niet vóór 10:00, Hotel X moet erin". Claude krijgt per klant
+naam, plaats, afstand, dagen sinds het laatste bezoek, classificatie, navulmoment, sector en open
+deals/activiteiten mee (geen adressen of telefoonnummers) en kiest de klanten, de vertrektijd en een reden per klant.
+De app berekent daarna zelf de volgorde en de tijden. Je kunt stops weghalen en de dag opslaan zoals altijd.
+
+Koppelen (Meer › Claude), kies één van twee:
+- **API-sleutel**: maak een sleutel aan op [platform.claude.com](https://platform.claude.com) en plak die in de app.
+  De sleutel wordt alleen op dat apparaat bewaard. Handig voor één gebruiker.
+- **Proxy (aanbevolen voor meerdere collega's)**: zet `proxy/cloudflare-worker.js` op een Cloudflare Worker
+  met de secrets `ANTHROPIC_API_KEY` en `ALLOWED_ORIGIN`, en vul de Worker-URL in bij *proxy-URL*.
+  De sleutel staat dan niet op de telefoons.
+
+Model: `claude-opus-5` met adaptief denken en een vast JSON-antwoordformaat. Een planning kost enkele centen.
+Zonder internet werkt dit niet; de gewone dagplanner werkt wel offline.
+
 ## Hoe de data werkt
 
 - **Zonder koppeling** staat alles lokaal in de browser (per apparaat). Importeer Klantkaart.xlsx
@@ -112,9 +130,11 @@ python3 -m http.server 8080
 | `js/planner.js` | Dagplanner en Google Maps-route |
 | `js/graph.js`, `js/auth-page.js`, `auth.html` | Microsoft 365-aanmelding (OAuth2 + PKCE) en Graph Excel-API |
 | `js/excel.js` | Import/back-up (SheetJS) en exports (Verbruik-regels, My Maps CSV) |
+| `js/claude.js` | Dagplanning door Claude (Anthropic SDK, structured output) |
+| `proxy/cloudflare-worker.js` | Voorbeeldproxy zodat de API-sleutel op de server blijft |
 | `js/geo.js` | Coördinaten per plaats via OpenStreetMap Nominatim, voor betere routes |
 | `sw.js`, `manifest.webmanifest`, `icons/` | PWA: offline cache en installatie |
 | `teams/` | Teams-app manifest en iconen |
-| `vendor/` | SheetJS 0.18.5 en Microsoft Teams JS SDK 2.x |
+| `vendor/` | SheetJS 0.18.5, Microsoft Teams JS SDK 2.x en de Anthropic TypeScript SDK 0.128.0 (gebundeld voor de browser) |
 
 Na het wijzigen van bestanden: verhoog `CACHE` in `sw.js`, zodat geïnstalleerde apps de nieuwe versie ophalen.

@@ -106,8 +106,8 @@ function bestOrder(stops) {
   return { order, travel: cost(order) };
 }
 
-function schedule(order, s) {
-  let t = toMin(s.settings.startTijd);
+function schedule(order, s, startTijd = s.settings.startTijd) {
+  let t = toMin(startTijd);
   let prev = { start: true };
   const stops = [];
   for (const c of order) {
@@ -191,6 +191,64 @@ export function planDay({ datum = todayISO(), include = [], exclude = [] } = {})
     teLaat: sched.terug > eind,
     schatting: usedCoords ? 'Reistijden op basis van coördinaten × 1,3 (wegennet), geen exacte route.' : 'Reistijden tussen klanten zijn geschat op basis van afstand vanaf de startplaats. Haal coördinaten op (Instellingen) voor een betere route.',
     kandidaten: scored.length,
+  };
+}
+
+// Compacte klantenlijst als context voor Claude (alleen wat nodig is om te kiezen).
+export function candidateSummary(datum = todayISO()) {
+  const s = store.get();
+  const all = stats();
+  const openDealNrs = new Set(s.deals.filter((d) => d.status === 'open' && !d.deleted).map((d) => String(d.nr)));
+  const pinned = new Set(s.pinned.map(String));
+  return s.customers
+    .filter((c) => c.naam && c.adres && c.plaats)
+    .filter((c) => (c.km ?? 0) <= s.settings.maxKm || pinned.has(String(c.nr)))
+    .map((c) => {
+      const st = statFor(all, c.nr);
+      const f = refillForecast(c.nr);
+      const p = s.profiles.find((x) => String(x.nr) === String(c.nr));
+      const acts = s.activities.filter((a) => !a.done && !a.deleted && String(a.nr) === String(c.nr)).map((a) => `${a.type} ${a.datum}: ${a.titel}`);
+      return {
+        nr: c.nr,
+        naam: c.naam,
+        plaats: c.plaats,
+        km_vanaf_start: c.km,
+        reistijd_min: c.min,
+        dagen_sinds_bezoek: st.laatste ? daysBetween(st.laatste, datum) : null,
+        bezoeken: st.bezoeken,
+        classificatie: st.classificatie || null,
+        dagen_tot_navullen: f ? daysBetween(datum, f.leeg) : null,
+        sector: p?.sector || null,
+        open_deal: openDealNrs.has(String(c.nr)),
+        open_activiteiten: acts.length ? acts : undefined,
+        handmatig_ingepland: pinned.has(String(c.nr)) || undefined,
+      };
+    })
+    // Lege velden weglaten: houdt de vraag aan Claude klein.
+    .map((row) => Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null && v !== undefined && v !== false && v !== '')));
+}
+
+// Maakt een planning van een door Claude (of de gebruiker) gekozen lijst klanten.
+export function planFromSelection({ datum, nrs, redenen = {}, startTijd, toelichting = '', optimize = true, door = 'claude' }) {
+  const s = store.get();
+  const chosen = nrs.map((nr) => s.customers.find((c) => String(c.nr) === String(nr))).filter(Boolean);
+  const order = optimize ? bestOrder(chosen).order : chosen;
+  const start = /^\d{1,2}:\d{2}$/.test(startTijd || '') ? startTijd : s.settings.startTijd;
+  const sched = schedule(order, s, start);
+  sched.stops.forEach((stop) => { stop.reden = redenen[String(stop.nr)] || ''; });
+  const totaalReis = sched.stops.reduce((t, x) => t + x.reis, 0) + sched.terugReis;
+  return {
+    datum,
+    stops: sched.stops,
+    terugReis: sched.terugReis,
+    terug: fmtTime(sched.terug),
+    totaalReis,
+    teLaat: sched.terug > toMin(s.settings.eindTijd),
+    schatting: door === 'claude' ? 'Klanten gekozen door Claude; volgorde en tijden berekend door de app.' : 'Reistijden zijn een schatting, geen exacte route.',
+    kandidaten: s.customers.length,
+    door,
+    toelichting,
+    startTijd: start,
   };
 }
 

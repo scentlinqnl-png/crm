@@ -229,6 +229,10 @@ legend { padding: 0 4px; }
 .deal.dragging { opacity: .5; }
 .deal-foot { display: flex; justify-content: space-between; margin-top: 6px; font-size: .82rem; }
 
+/* Claude */
+.claude-card { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.claude-note { background: var(--surface-2); border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: 8px; margin: 0 0 10px; }
+
 /* dag afsluiten */
 .dagrow { border-radius: 12px; }
 .tsv { background: var(--surface-2); padding: 10px; border-radius: 10px; overflow-x: auto; font-size: .8rem; white-space: pre; }

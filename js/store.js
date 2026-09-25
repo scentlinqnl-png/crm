@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = {
     { naam: 'Scent Pro', totM3: 1500, prijs: 1895, abonnement: 129 },
     { naam: 'Scent HVAC', totM3: 999999, prijs: 3950, abonnement: 249 },
   ],
+  claudeProxy: '',        // optioneel: eigen proxy voor de Anthropic API
   doelBezoekenWeek: 15,
   doelVerbruikMaand: 5000,
   m365: {

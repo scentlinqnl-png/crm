@@ -3,11 +3,12 @@ import {
   uid, now, ACTIVITY_TYPES, openActivities, openDeals, dealsWithoutNextStep, norm,
   profile, saveProfile, ketenLocaties, adviseSystem, refillForecast, refillsDue,
 } from './store.js';
-import { planDay, mapsRouteUrl } from './planner.js';
+import { planDay, mapsRouteUrl, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow } from './excel.js';
 import { geocodePlaces, missingPlaces } from './geo.js';
 import { loadDemo } from './demo.js';
+import { planWithClaude, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -706,6 +707,12 @@ viewPipeline.after = () => {
 };
 
 let draftPlan = null;
+let claudeAsk = '';
+let claudeBusy = false;
+let claudeStatus = '';
+let claudeCtl = null;
+let pageClaude = false;
+pageSample().then((smp) => { if (smp) { pageClaude = true; render(); } });
 function viewPlanning(params) {
   const s = store.get();
   if (!s.customers.length) return emptyState();
@@ -722,11 +729,24 @@ function viewPlanning(params) {
       </div>
       <p class="muted small">Start ${h(s.settings.startPlaats)} ${h(s.settings.startTijd)} · ${s.settings.minStops}–${s.settings.maxStops} bezoeken van ${s.settings.bezoekDuur} min · terug vóór ${h(s.settings.eindTijd)}${s.pinned.length ? ` · ${s.pinned.length} handmatig ingepland` : ''}</p>
     </section>
+    <section class="card form claude-card">
+      <h2>✨ Plan met Claude</h2>
+      ${claudeConfigured() || pageClaude ? `
+        <label>Wat wil je deze dag?<textarea id="claudeAsk" rows="3" placeholder="bijv. Richting Rotterdam, eerste afspraak niet vóór 10:00, Hotel Scheldezicht moet erin, liefst klanten met een open deal">${h(claudeAsk)}</textarea></label>
+        <div class="actions left">
+          <button class="btn primary" id="claudePlan" type="button" ${claudeBusy ? 'disabled' : ''}>${claudeBusy ? 'Claude plant…' : 'Laat Claude plannen'}</button>
+          ${claudeBusy ? '<button class="btn ghost" id="claudeStop" type="button">Stop</button>' : ''}
+        </div>
+        <p class="muted small" id="claudeStatus">${h(claudeStatus)}</p>`
+      : `<p class="muted">Laat Claude een dag samenstellen op basis van je klanten, navulmomenten, deals en je eigen wensen in gewone taal.</p>
+        <a class="btn" href="#/meer">Claude koppelen</a>`}
+    </section>
     ${plan ? `
       <section class="card">
-        <div class="card-head"><h2>${fmtDate(plan.datum)} ${saved && plan === saved ? '<span class="badge k-normaal">opgeslagen</span>' : '<span class="badge">voorstel</span>'}</h2></div>
+        <div class="card-head"><h2>${fmtDate(plan.datum)} ${saved && plan === saved ? '<span class="badge k-normaal">opgeslagen</span>' : '<span class="badge">voorstel</span>'}${plan.door === 'claude' ? ' <span class="badge deal">✨ Claude</span>' : ''}</h2></div>
+        ${plan.toelichting ? `<p class="claude-note">${h(plan.toelichting)}</p>` : ''}
         <ol class="route">
-          <li class="depot"><time>${h(s.settings.startTijd)}</time><div class="grow">Vertrek ${h(s.settings.startPlaats)}</div></li>
+          <li class="depot"><time>${h(plan.startTijd || s.settings.startTijd)}</time><div class="grow">Vertrek ${h(s.settings.startPlaats)}</div></li>
           ${plan.stops.map((st) => {
             const c = customer(st.nr);
             if (!c) return '';
@@ -743,7 +763,7 @@ function viewPlanning(params) {
           <li class="depot"><time>${h(plan.terug)}</time><div class="grow">Terug in ${h(s.settings.startPlaats)} (${plan.terugReis} min)</div></li>
         </ol>
         <p class="muted small">Totale reistijd ca. ${Math.floor(plan.totaalReis / 60)} u ${plan.totaalReis % 60} min. ${h(plan.schatting)}${plan.teLaat ? ' ⚠️ Deze dag loopt uit na de eindtijd.' : ''}</p>
-        ${plan.stops.length < s.settings.minStops ? `<p class="alert">Er vielen maar ${plan.stops.length} klanten binnen de criteria (${plan.kandidaten} klanten met adres). Verruim eventueel de instellingen.</p>` : ''}
+        ${plan.door !== 'claude' && plan.stops.length < s.settings.minStops ? `<p class="alert">Er vielen maar ${plan.stops.length} klanten binnen de criteria (${plan.kandidaten} klanten met adres). Verruim eventueel de instellingen.</p>` : ''}
         <div class="actions left">
           ${plan !== saved ? '<button class="btn primary" id="savePlan">Opslaan</button>' : ''}
           <a class="btn" href="${h(mapsRouteUrl(plan))}" target="_blank" rel="noopener">🧭 Google Maps</a>
@@ -764,6 +784,25 @@ viewPlanning.after = (params) => {
     draftPlan = planDay({ datum: dateEl.value, include: [...new Set([...s.pinned, ...keep])], exclude });
     render();
   };
+  $('#claudeAsk')?.addEventListener('input', (e) => { claudeAsk = e.target.value; });
+  $('#claudeStop')?.addEventListener('click', () => claudeCtl?.abort());
+  $('#claudePlan')?.addEventListener('click', async () => {
+    claudeBusy = true;
+    claudeStatus = 'Claude bekijkt je klanten en stelt een dag samen. Dit duurt meestal 20 tot 60 seconden.';
+    claudeCtl = new AbortController();
+    render();
+    try {
+      draftPlan = await planWithClaude({ datum: dateEl.value, opdracht: claudeAsk, signal: claudeCtl.signal });
+      claudeStatus = '';
+      toast('Claude heeft een dag voorgesteld. Controleer en sla op.');
+    } catch (e) {
+      claudeStatus = e.name === 'AbortError' ? 'Gestopt.' : e.message;
+    } finally {
+      claudeBusy = false;
+      claudeCtl = null;
+      render();
+    }
+  });
   $('#suggest')?.addEventListener('click', () => {
     const cur = draftPlan?.datum === dateEl.value ? draftPlan : null;
     // Bij "opnieuw": sla de eerste stop van het vorige voorstel over voor een andere route.
@@ -771,12 +810,17 @@ viewPlanning.after = (params) => {
   });
   dateEl?.addEventListener('change', () => { location.hash = `#/planning?d=${dateEl.value}`; });
   $$('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+    // Stop weghalen zonder aan te vullen; redenen, starttijd en toelichting blijven staan.
     const cur = draftPlan?.datum === dateEl.value ? draftPlan : s.plans[dateEl.value];
-    draftPlan = planDay({ datum: dateEl.value, include: cur.stops.map((x) => x.nr).filter((n) => String(n) !== b.dataset.remove), exclude: [b.dataset.remove] });
-    // Alleen de overgebleven stops, niet automatisch aanvullen.
-    draftPlan.stops = draftPlan.stops.filter((x) => cur.stops.some((y) => String(y.nr) === String(x.nr)));
-    const re = planDay({ datum: dateEl.value, include: draftPlan.stops.map((x) => x.nr), exclude: s.customers.map((c) => c.nr) });
-    draftPlan = re;
+    const rest = cur.stops.filter((x) => String(x.nr) !== b.dataset.remove);
+    draftPlan = planFromSelection({
+      datum: cur.datum,
+      nrs: rest.map((x) => x.nr),
+      redenen: Object.fromEntries(rest.map((x) => [String(x.nr), x.reden])),
+      startTijd: cur.startTijd,
+      toelichting: cur.toelichting,
+      door: cur.door,
+    });
     render();
   }));
   $('#savePlan')?.addEventListener('click', () => {
@@ -951,6 +995,20 @@ function viewMeer() {
     </section>
 
     <section class="card form">
+      <h2>Claude</h2>
+      <p class="muted small">Met Claude kun je in Planning een dag laten samenstellen in gewone taal. Claude krijgt daarvoor per klant naam, plaats, afstand, bezoekhistorie, classificatie, navulmoment, sector en open deals/activiteiten mee. Model: <code>${h(CLAUDE_MODEL)}</code>.</p>
+      <form id="claudeForm">
+        <label>Anthropic API-sleutel<input name="key" type="password" autocomplete="off" value="${h(getClaudeKey())}" placeholder="sk-ant-…"></label>
+        <label>Of: proxy-URL (sleutel blijft op je eigen server)<input name="proxy" type="url" value="${h(s.settings.claudeProxy || '')}" placeholder="https://…"></label>
+        <p class="muted small">De sleutel wordt alleen op dit apparaat bewaard. Gebruik voor meerdere collega's liever een proxy (zie README), zodat de sleutel niet op elke telefoon staat. Kosten per planning: enkele centen.</p>
+        <div class="actions left">
+          <button class="btn primary">Opslaan</button>
+          ${claudeConfigured() ? '<button class="btn ghost danger" type="button" id="claudeRemove">Ontkoppelen</button>' : ''}
+        </div>
+      </form>
+    </section>
+
+    <section class="card form">
       <h2>Planning & doelen</h2>
       <form id="prefForm">
         <div class="row2">
@@ -1028,6 +1086,22 @@ viewMeer.after = async () => {
     }
   });
   $('#signOut')?.addEventListener('click', () => { m365.signOut(); render(); });
+  $('#claudeForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    setClaudeKey(d.key.trim());
+    store.update((s) => { s.settings.claudeProxy = d.proxy.trim(); });
+    resetClaudeClient();
+    toast(claudeConfigured() ? 'Claude gekoppeld' : 'Opgeslagen');
+    render();
+  });
+  $('#claudeRemove')?.addEventListener('click', () => {
+    setClaudeKey('');
+    store.update((s) => { s.settings.claudeProxy = ''; });
+    resetClaudeClient();
+    toast('Claude ontkoppeld');
+    render();
+  });
   $('#syncNow')?.addEventListener('click', () => runSync());
   $('#prefForm').addEventListener('submit', (e) => {
     e.preventDefault();
