@@ -82,6 +82,20 @@ Op de klantkaart:
 gewonnen dealwaarde en verbruik per maand, cijfers per sector, klanten per status en servicecijfers
 (open tickets per type, gemiddelde doorlooptijd, nieuwe tickets per maand).
 
+## Servicerapport, offertes, voorraad en import
+
+- **Ticket afronden**: foto's maken of kiezen, handtekening van de klant op het scherm, gebruikt materiaal
+  uit de voorraad, en direct een **PDF-servicerapport** (delen via mail/WhatsApp/Teams of downloaden).
+  Foto's en handtekeningen staan op het apparaat (IndexedDB) en gaan mee in de back-up; ze worden niet naar Excel gesynchroniseerd.
+- **Terugkerend onderhoud**: geef een systeem een interval (3/6/12 maanden); de app maakt 14 dagen vooraf een onderhoudsticket.
+- **Offertes**: opslaan met nummer (O-0001), als PDF versturen, en bij akkoord automatisch contract,
+  systemen (gepland) en installatieticket aanmaken. Na de installatie worden de systemen actief.
+- **Voorraad in de bus**: artikelen met minimum, aanvullen en afboeken; materiaal bij tickets wordt automatisch afgeboekt.
+- **Import** (Meer › Importeren): klanten, contactpersonen, contracten en systemen uit CSV of Excel,
+  met automatische kolomkoppeling en voorbeeld. Bestaande klanten worden bijgewerkt.
+- **Claude**: naast de salesdag plant Claude ook de helpdeskdag (Service › Route) en maakt een
+  briefing per klant (klantkaart › Briefing).
+
 ## Plan met Claude
 
 In **Planning** staat de kaart *✨ Plan met Claude*. Typ in gewone taal wat je wilt, bijvoorbeeld
@@ -167,6 +181,8 @@ python3 -m http.server 8080
 | `js/app.js` | Hoofdschermen, dialogen, router |
 | `js/ui.js` | Gedeelde UI-hulpfuncties |
 | `js/service.js` | Tickets, service-agenda en helpdeskroute |
+| `js/media.js`, `js/report.js` | Foto's/handtekening (IndexedDB) en PDF-rapporten (jsPDF) |
+| `js/quotes.js`, `js/stock.js`, `js/import.js` | Offertes, voorraad en CSV/Excel-import |
 | `js/crm.js` | Contactpersonen, contracten, systemen, klantstatus en rapportage |
 | `js/store.js` | Lokale opslag, parsing van het werkboek, statistieken/classificatie, navulvoorspelling, calculator |
 | `js/planner.js` | Dagplanner en Google Maps-route |
@@ -177,6 +193,6 @@ python3 -m http.server 8080
 | `js/geo.js` | Coördinaten per plaats via OpenStreetMap Nominatim, voor betere routes |
 | `sw.js`, `manifest.webmanifest`, `icons/` | PWA: offline cache en installatie |
 | `teams/` | Teams-app manifest en iconen |
-| `vendor/` | SheetJS 0.18.5, Microsoft Teams JS SDK 2.x en de Anthropic TypeScript SDK 0.128.0 (gebundeld voor de browser) |
+| `vendor/` | SheetJS 0.18.5, Microsoft Teams JS SDK 2.x de Anthropic TypeScript SDK 0.128.0 (gebundeld voor de browser) en jsPDF 4.2.1 |
 
 Na het wijzigen van bestanden: verhoog `CACHE` in `sw.js`, zodat geïnstalleerde apps de nieuwe versie ophalen.

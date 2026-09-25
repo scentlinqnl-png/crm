@@ -12,6 +12,7 @@ import { loadDemo } from './demo.js';
 import { seedStock } from './stock.js';
 import { calcQuote, saveQuote, setQuoteStatus, acceptQuote, QUOTE_STATUS, LEASE_MND } from './quotes.js';
 import { shareOrDownloadQuote } from './report.js';
+import { viewImport } from './import.js';
 import { viewService, ticketItem, bindTicketList, ticketDialog } from './service.js';
 import { viewRapport, klantCrmHead, klantCrmSections, bindKlantCrm, crmTimeline } from './crm.js';
 import { planWithClaude, klantBriefing, claudeReady, claudeConfigured, pageSample, getClaudeKey, setClaudeKey, resetClaudeClient, CLAUDE_MODEL } from './claude.js';
@@ -940,6 +941,7 @@ function viewMeer() {
   const missing = missingPlaces().length;
   return `
     <h1>Meer</h1>
+    <a class="card nav-card" href="#/import"><b>📥 Importeren uit CSV of Excel</b><span class="sub">Klanten, contactpersonen, contracten en systemen, bijvoorbeeld uit je boekhoudpakket</span></a>
     <a class="card nav-card" href="#/rapport"><b>📈 Rapportage</b><span class="sub">MRR, contracten, pipelineconversie, verbruik per sector en servicecijfers</span></a>
     <section class="card">
       <h2>Gegevens</h2>
@@ -1368,6 +1370,7 @@ const routes = [
   [/^\/offerte$/, viewOfferte, 'klanten', true],
   [/^\/service$/, viewService, 'service', true],
   [/^\/rapport$/, viewRapport, 'meer'],
+  [/^\/import$/, viewImport, 'meer'],
   [/^\/meer$/, viewMeer, 'meer'],
 ];
 
