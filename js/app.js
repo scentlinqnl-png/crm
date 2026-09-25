@@ -4,7 +4,7 @@ import {
   profile, saveProfile, ketenLocaties, adviseSystem, refillForecast, refillsDue,
   openTickets, contractsEndingSoon, mrr, contactsFor, createMaintenanceTickets,
 } from './store.js';
-import { planDay, mapsRouteUrl, planFromSelection } from './planner.js';
+import { planDay, mapsRouteUrl, mapsRouteUrls, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
@@ -701,6 +701,7 @@ function viewPlanning(params) {
         <label>Datum<input type="date" id="planDate" value="${h(datum)}"></label>
         <label>&nbsp;<button class="btn primary" id="suggest" type="button">${plan ? 'Opnieuw voorstellen' : 'Stel dag voor'}</button></label>
       </div>
+      ${plan ? '' : '<div class="actions left"><button class="btn" id="manualDay" type="button">✍️ Zelf samenstellen</button></div>'}
       <p class="muted small">Start ${h(s.settings.startPlaats)} ${h(s.settings.startTijd)} · ${s.settings.minStops}–${s.settings.maxStops} bezoeken van ${s.settings.bezoekDuur} min · terug vóór ${h(s.settings.eindTijd)}${s.pinned.length ? ` · ${s.pinned.length} handmatig ingepland` : ''}</p>
     </section>
     <section class="card form claude-card">
@@ -717,10 +718,10 @@ function viewPlanning(params) {
     </section>
     ${plan ? `
       <section class="card">
-        <div class="card-head"><h2>${fmtDate(plan.datum)} ${saved && plan === saved ? '<span class="badge k-normaal">opgeslagen</span>' : '<span class="badge">voorstel</span>'}${plan.door === 'claude' ? ' <span class="badge deal">✨ Claude</span>' : ''}</h2></div>
+        <div class="card-head"><h2>${fmtDate(plan.datum)} ${saved && plan === saved ? '<span class="badge k-normaal">opgeslagen</span>' : '<span class="badge">voorstel</span>'}${plan.door === 'claude' ? ' <span class="badge deal">✨ Claude</span>' : plan.door === 'handmatig' ? ' <span class="badge">✍️ zelf</span>' : ''}</h2></div>
         ${plan.toelichting ? `<p class="claude-note">${h(plan.toelichting)}</p>` : ''}
         <ol class="route">
-          <li class="depot"><time>${h(plan.startTijd || s.settings.startTijd)}</time><div class="grow">Vertrek ${h(s.settings.startPlaats)}</div></li>
+          <li class="depot"><time><input type="time" id="planStart" class="time-inline" value="${h(plan.startTijd || s.settings.startTijd)}" aria-label="Vertrektijd"></time><div class="grow">Vertrek ${h(s.settings.startPlaats)}</div></li>
           ${plan.stops.map((st) => {
             const c = customer(st.nr);
             if (!c) return '';
@@ -731,17 +732,25 @@ function viewPlanning(params) {
                 <div class="sub">${h(fullAddress(c))}${c.telefoon ? ` · ${h(c.telefoon)}` : ''}</div>
                 <div class="sub">🚗 ${st.reis} min · ${h(st.reden)}</div>
               </div>
-              <button class="icon" data-remove="${h(c.nr)}" aria-label="Verwijder uit planning">✕</button>
+              <div class="stop-tools">
+                <button class="icon" data-up="${h(c.nr)}" aria-label="Eerder">▲</button>
+                <button class="icon" data-down="${h(c.nr)}" aria-label="Later">▼</button>
+                <button class="icon" data-remove="${h(c.nr)}" aria-label="Verwijder uit planning">✕</button>
+              </div>
             </li>`;
           }).join('')}
           <li class="depot"><time>${h(plan.terug)}</time><div class="grow">Terug in ${h(s.settings.startPlaats)} (${plan.terugReis} min)</div></li>
         </ol>
+        <div class="add-stop">
+          <select id="addStop" aria-label="Klant toevoegen"><option value="">+ Klant toevoegen…</option>${klantOptions()}</select>
+          ${plan.stops.length > 2 ? '<button class="btn small" id="optimize" type="button">🔀 Volgorde optimaliseren</button>' : ''}
+        </div>
         <p class="muted small">Totale reistijd ca. ${Math.floor(plan.totaalReis / 60)} u ${plan.totaalReis % 60} min. ${h(plan.schatting)}${plan.teLaat ? ' ⚠️ Deze dag loopt uit na de eindtijd.' : ''}</p>
         ${plan.door !== 'claude' && plan.stops.length < s.settings.minStops ? `<p class="alert">Er vielen maar ${plan.stops.length} klanten binnen de criteria (${plan.kandidaten} klanten met adres). Verruim eventueel de instellingen.</p>` : ''}
         <div class="actions left">
           ${plan !== saved ? '<button class="btn primary" id="savePlan">Opslaan</button>' : ''}
-          <a class="btn" href="${h(mapsRouteUrl(plan))}" target="_blank" rel="noopener">🧭 Google Maps</a>
-          <button class="btn" id="myMaps">⬇️ My Maps CSV</button>
+          ${mapsRouteUrls(plan).map((u, i, all) => `<a class="btn" href="${h(u)}" target="_blank" rel="noopener">🧭 Google Maps${all.length > 1 ? ` deel ${i + 1}/${all.length}` : ''}</a>`).join('')}
+          ${plan.stops.length ? '<button class="btn" id="myMaps">⬇️ My Maps CSV</button>' : ''}
           ${saved ? '<button class="btn ghost danger" id="delPlan">Planning wissen</button>' : ''}
         </div>
       </section>` : ''}
@@ -783,20 +792,45 @@ viewPlanning.after = (params) => {
     suggest(cur?.stops.length ? [cur.stops[0].nr] : []);
   });
   dateEl?.addEventListener('change', () => { location.hash = `#/planning?d=${dateEl.value}`; });
-  $$('[data-remove]').forEach((b) => b.addEventListener('click', () => {
-    // Stop weghalen zonder aan te vullen; redenen, starttijd en toelichting blijven staan.
-    const cur = draftPlan?.datum === dateEl.value ? draftPlan : s.plans[dateEl.value];
-    const rest = cur.stops.filter((x) => String(x.nr) !== b.dataset.remove);
+  // Zelf aanpassen: stops toevoegen, verwijderen, verschuiven of de starttijd wijzigen.
+  const current = () => (draftPlan?.datum === dateEl.value ? draftPlan : s.plans[dateEl.value]);
+  const rebuild = (nrs, { optimize = false, startTijd } = {}) => {
+    const cur = current();
+    const redenen = Object.fromEntries(cur.stops.map((x) => [String(x.nr), x.reden]));
     draftPlan = planFromSelection({
       datum: cur.datum,
-      nrs: rest.map((x) => x.nr),
-      redenen: Object.fromEntries(rest.map((x) => [String(x.nr), x.reden])),
-      startTijd: cur.startTijd,
+      nrs,
+      redenen: Object.fromEntries(nrs.map((n) => [String(n), redenen[String(n)] || 'zelf toegevoegd'])),
+      startTijd: startTijd || cur.startTijd,
       toelichting: cur.toelichting,
-      door: cur.door,
+      door: cur.door === 'claude' ? 'claude' : 'handmatig',
+      optimize,
     });
     render();
-  }));
+  };
+  const order = () => current().stops.map((x) => x.nr);
+  $('#manualDay')?.addEventListener('click', () => {
+    draftPlan = planFromSelection({ datum: dateEl.value, nrs: [...s.pinned], redenen: {}, door: 'handmatig', optimize: true });
+    render();
+  });
+  $$('[data-remove]').forEach((b) => b.addEventListener('click', () => rebuild(order().filter((n) => String(n) !== b.dataset.remove))));
+  const move = (nr, delta) => {
+    const o = order();
+    const i = o.findIndex((n) => String(n) === nr);
+    const j = i + delta;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    rebuild(o);
+  };
+  $$('[data-up]').forEach((b) => b.addEventListener('click', () => move(b.dataset.up, -1)));
+  $$('[data-down]').forEach((b) => b.addEventListener('click', () => move(b.dataset.down, 1)));
+  $('#addStop')?.addEventListener('change', (e) => {
+    const nr = e.target.value;
+    if (!nr || order().some((n) => String(n) === nr)) return;
+    rebuild([...order(), Number(nr)]);
+  });
+  $('#optimize')?.addEventListener('click', () => rebuild(order(), { optimize: true }));
+  $('#planStart')?.addEventListener('change', (e) => rebuild(order(), { startTijd: e.target.value }));
   $('#savePlan')?.addEventListener('click', () => {
     const p = draftPlan;
     store.update((st) => {

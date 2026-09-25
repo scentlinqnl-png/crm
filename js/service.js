@@ -4,7 +4,7 @@ import {
   TICKET_TYPES, TICKET_PRIO, TICKET_STATUS, TICKET_DUUR, isOpenTicket, openTickets, newTicket, refillsWithoutTicket, assetsFor,
   contactsFor, maintenanceDue, createMaintenanceTickets,
 } from './store.js';
-import { planFromSelection, mapsRouteUrl } from './planner.js';
+import { planFromSelection, mapsRouteUrls } from './planner.js';
 import { putBlob, getBlob, deleteBlob, compressImage, signaturePad } from './media.js';
 import { shareOrDownloadReport } from './report.js';
 import { activatePlannedAssets } from './quotes.js';
@@ -443,7 +443,7 @@ function route(params) {
         </ol>
         <p class="muted small">Totale reistijd ca. ${Math.floor(plan.totaalReis / 60)} u ${plan.totaalReis % 60} min. Reistijden zijn een schatting.${plan.teLaat ? ' ⚠️ Deze dag loopt uit na de eindtijd.' : ''}</p>
         <div class="actions left">
-          <a class="btn" href="${h(mapsRouteUrl(plan))}" target="_blank" rel="noopener">🧭 Google Maps</a>
+          ${mapsRouteUrls(plan).map((u, i, all) => `<a class="btn" href="${h(u)}" target="_blank" rel="noopener">🧭 Google Maps${all.length > 1 ? ` deel ${i + 1}/${all.length}` : ''}</a>`).join('')}
           <button class="btn" id="setTimes">Tijden in tickets zetten</button>
         </div>
       </section>` : '<p class="card muted">Geen open tickets op deze dag.</p>'}

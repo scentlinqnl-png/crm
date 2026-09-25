@@ -325,3 +325,10 @@ canvas.sig { width: 100%; height: 150px; background: #fff; border-radius: 10px; 
 .list.stock li { gap: 4px; }
 .stock-n { min-width: 36px; text-align: center; font-variant-numeric: tabular-nums; font-size: 1.1rem; }
 .list.stock .icon { font-size: 1.3rem; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); }
+
+/* zelf plannen */
+.stop-tools { display: flex; flex-direction: column; align-items: center; }
+.stop-tools .icon { padding: 4px 8px; font-size: .9rem; }
+.add-stop { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.add-stop select { flex: 1; min-width: 200px; }
+.time-inline { width: 112px; min-height: 34px; padding: 4px 6px; font: inherit; font-weight: 700; }

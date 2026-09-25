@@ -253,18 +253,23 @@ export function planFromSelection({ datum, nrs, redenen = {}, startTijd, toelich
   };
 }
 
-export function mapsRouteUrl(plan) {
+// Google Maps-routelinks. Maps accepteert max. 9 tussenstops per link, dus lange dagen worden in delen gesplitst.
+export function mapsRouteUrls(plan) {
   const s = store.get();
   const addr = plan.stops.map((x) => {
     const c = s.customers.find((k) => String(k.nr) === String(x.nr));
     return c ? fullAddress(c) : '';
   }).filter(Boolean);
-  const p = new URLSearchParams({
-    api: '1',
-    origin: s.settings.startPlaats,
-    destination: s.settings.startPlaats,
-    travelmode: 'driving',
-  });
-  if (addr.length) p.set('waypoints', addr.join('|'));
-  return 'https://www.google.com/maps/dir/?' + p.toString();
+  if (!addr.length) return [];
+  const points = [s.settings.startPlaats, ...addr, s.settings.startPlaats];
+  const urls = [];
+  for (let i = 0; i < points.length - 1; i += 10) {
+    const seg = points.slice(i, i + 11);
+    const p = new URLSearchParams({ api: '1', origin: seg[0], destination: seg[seg.length - 1], travelmode: 'driving' });
+    if (seg.length > 2) p.set('waypoints', seg.slice(1, -1).join('|'));
+    urls.push('https://www.google.com/maps/dir/?' + p.toString());
+  }
+  return urls;
 }
+
+export const mapsRouteUrl = (plan) => mapsRouteUrls(plan)[0] || 'https://www.google.com/maps';
