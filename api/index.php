@@ -15,7 +15,7 @@ try {
   if ($action === 'login') {
     $u = checkPassword(trim((string)($in['username'] ?? '')), (string)($in['password'] ?? ''));
     if (!$u) fail(401, 'Onjuiste gebruikersnaam of wachtwoord');
-    out(['token' => newToken((int)$u['id']), 'user' => $u['username']]);
+    out(['token' => newToken((int)$u['id']), 'user' => $u['username'], 'mustChange' => !empty($u['must_change'])]);
   }
 
   $user = currentUser();
@@ -35,7 +35,8 @@ try {
     if (!checkPassword($user['username'], (string)($in['old'] ?? ''))) fail(403, 'Huidig wachtwoord klopt niet');
     $new = (string)($in['new'] ?? '');
     if (strlen($new) < 10) fail(400, 'Nieuw wachtwoord: minimaal 10 tekens');
-    db()->prepare('UPDATE kk_users SET pass_hash = ? WHERE id = ?')->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+    if ($new === (string)($in['old'] ?? '')) fail(400, 'Kies een ander wachtwoord dan het huidige');
+    db()->prepare('UPDATE kk_users SET pass_hash = ?, must_change = 0 WHERE id = ?')->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
     db()->prepare('DELETE FROM kk_tokens WHERE user_id = ? AND hash <> ?')->execute([$user['id'], hash('sha256', $_SERVER['HTTP_X_AUTH_TOKEN'])]);
     out(['ok' => true]);
   }
@@ -51,13 +52,13 @@ try {
       $st = db()->prepare('SELECT COUNT(*) FROM kk_users WHERE username = ?');
       $st->execute([$name]);
       if ($st->fetchColumn()) fail(409, 'Die gebruikersnaam bestaat al');
-      db()->prepare('INSERT INTO kk_users (username, pass_hash, admin, created_at) VALUES (?, ?, ?, ?)')
+      db()->prepare('INSERT INTO kk_users (username, pass_hash, admin, created_at, must_change) VALUES (?, ?, ?, ?, 1)')
         ->execute([$name, password_hash($pass, PASSWORD_DEFAULT), empty($in['admin']) ? 0 : 1, date('Y-m-d H:i:s')]);
     } elseif ($action === 'user_update') {
       $id = (int)($in['id'] ?? 0);
       if (isset($in['password'])) {
         if (strlen((string)$in['password']) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
-        db()->prepare('UPDATE kk_users SET pass_hash = ?, failed = 0, locked_until = NULL WHERE id = ?')->execute([password_hash((string)$in['password'], PASSWORD_DEFAULT), $id]);
+        db()->prepare('UPDATE kk_users SET pass_hash = ?, failed = 0, locked_until = NULL, must_change = 1 WHERE id = ?')->execute([password_hash((string)$in['password'], PASSWORD_DEFAULT), $id]);
         db()->prepare('DELETE FROM kk_tokens WHERE user_id = ?')->execute([$id]);
       }
       if (isset($in['admin'])) {

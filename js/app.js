@@ -1029,13 +1029,46 @@ viewLogin.after = () => {
       const me = await db.login(d.username.trim(), d.password);
       resetClaudeClient();
       const local = store.get().customers.length;
-      if (!local || !me.klanten) await db.firstSync(local ? 'merge' : 'replace');
+      if (!db.mustChangePassword() && (!local || !me.klanten)) await db.firstSync(local ? 'merge' : 'replace');
       render();
     } catch (err) {
       $('#loginMsg').textContent = navigator.onLine ? err.message : 'Je bent offline. Aanmelden kan alleen met internet.';
       btn.disabled = false;
     }
   });
+};
+
+// Eerste keer inloggen met een tijdelijk wachtwoord: eerst een eigen wachtwoord kiezen.
+function viewNewPassword() {
+  return `
+    <section class="login-screen">
+      <h1>Welkom, ${h(db.user())}</h1>
+      <p class="muted">Je bent ingelogd met een tijdelijk wachtwoord. Kies nu je eigen wachtwoord.</p>
+      <form id="newPwForm" class="card form">
+        <label>Tijdelijk wachtwoord<input name="old" type="password" required autocomplete="current-password"></label>
+        <label>Nieuw wachtwoord (min. 10 tekens)<input name="nw" type="password" minlength="10" required autocomplete="new-password"></label>
+        <label>Nieuw wachtwoord herhalen<input name="nw2" type="password" minlength="10" required autocomplete="new-password"></label>
+        <div class="actions"><button class="btn primary">Opslaan en verder</button></div>
+        <p id="pwMsg" class="late small" role="alert"></p>
+      </form>
+      <button class="btn ghost" id="dbLogout" type="button">Afmelden</button>
+    </section>`;
+}
+viewNewPassword.after = () => {
+  $('#newPwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    if (d.nw !== d.nw2) { $('#pwMsg').textContent = 'De nieuwe wachtwoorden zijn niet gelijk.'; return; }
+    try {
+      await db.changePassword(d.old, d.nw);
+      toast('Wachtwoord opgeslagen');
+      if (!store.get().customers.length) await db.firstSync('replace');
+      render();
+    } catch (err) {
+      $('#pwMsg').textContent = err.message;
+    }
+  });
+  $('#dbLogout').addEventListener('click', logoutNow);
 };
 
 function viewFirstSync() {
@@ -1623,7 +1656,7 @@ let lastRoute = '';
 function render() {
   const [path, query = ''] = (location.hash.slice(1) || '/vandaag').split('?');
   const params = new URLSearchParams(query);
-  const gate = loginRequired() && (!db.isSignedIn() ? viewLogin : db.needsFirstSync() ? viewFirstSync : null);
+  const gate = loginRequired() && (!db.isSignedIn() ? viewLogin : db.mustChangePassword() ? viewNewPassword : db.needsFirstSync() ? viewFirstSync : null);
   document.body.classList.toggle('gated', !!gate);
   const found = gate ? [/^/, gate, ''] : routes.find(([re]) => re.test(path)) || routes[0];
   const [re, fn, tab, usesParams] = found;

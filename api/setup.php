@@ -15,7 +15,20 @@ try {
   schema();
   $count = (int)db()->query('SELECT COUNT(*) FROM kk_users')->fetchColumn();
 
-  if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Snelle start: alleen zolang er nog geen gebruikers zijn. Maakt Admin (beheerder), Tugrul en Onur aan
+  // met tijdelijke wachtwoorden die hier één keer getoond worden en bij de eerste login vervangen moeten worden.
+  $created = [];
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quickstart']) && $count === 0) {
+    $ins = db()->prepare('INSERT INTO kk_users (username, pass_hash, admin, created_at, must_change) VALUES (?, ?, ?, ?, 1)');
+    foreach ([['Admin', 1], ['Tugrul', 0], ['Onur', 0]] as [$name, $adm]) {
+      $pw = tempPassword();
+      $ins->execute([$name, password_hash($pw, PASSWORD_DEFAULT), $adm, date('Y-m-d H:i:s')]);
+      $created[] = [$name, $pw, $adm];
+    }
+    $count = 3;
+    $ok = true;
+    $msg = 'Drie gebruikers aangemaakt. Schrijf de wachtwoorden nu op: ze worden maar één keer getoond.';
+  } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $new = trim((string)($_POST['username'] ?? ''));
     $pass = (string)($_POST['password'] ?? '');
     if ($count > 0) {
@@ -49,8 +62,19 @@ $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES);
 </head><body>
 <h1>Klantkaart · gebruikers</h1>
 <?php if ($msg): ?><p class="m"><?= $e($msg) ?></p><?php endif; ?>
+<?php if ($created): ?>
+  <table style="width:100%;border-collapse:collapse;margin:12px 0">
+    <tr><th align="left">Gebruiker</th><th align="left">Tijdelijk wachtwoord</th></tr>
+    <?php foreach ($created as [$n, $p, $a]): ?>
+    <tr><td style="padding:6px 0"><?= $e($n) ?><?= $a ? ' (beheerder)' : '' ?></td><td><code style="font-size:18px"><?= $e($p) ?></code></td></tr>
+    <?php endforeach; ?>
+  </table>
+  <p>Bij de eerste keer inloggen kiest iedereen een eigen wachtwoord.</p>
+<?php endif; ?>
 <?php if (!isset($count)): ?>
 <?php elseif ($count === 0): ?>
+  <form method="post"><button name="quickstart" value="1">Snelle start: Admin, Tugrul en Onur aanmaken</button></form>
+  <p style="color:#aaa">Of maak hieronder zelf een eerste gebruiker aan.</p>
   <p>De tabellen staan klaar. Maak de eerste gebruiker aan; die wordt beheerder.</p>
 <?php else: ?>
   <p><?= $count ?> gebruiker(s). Een collega toevoegen kan alleen met de gegevens van een beheerder.</p>

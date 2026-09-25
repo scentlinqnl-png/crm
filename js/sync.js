@@ -33,13 +33,19 @@ export const token = () => { try { return localStorage.getItem(TOKEN_KEY) || '';
 // Heeft de server een Anthropic-sleutel? Dan werkt Claude zonder eigen sleutel.
 export const serverClaude = () => isSignedIn() && !!dbState.claude;
 export const isAdmin = () => isSignedIn() && !!dbState.admin;
+export const mustChangePassword = () => isSignedIn() && !!dbState.mustChange;
 
 // Gebruikersbeheer en wachtwoord (api/index.php).
 export const users = () => call('users');
 export const addUser = (username, password, admin) => call('user_add', { username, password, admin });
 export const updateUser = (id, fields) => call('user_update', { id, ...fields });
 export const deleteUser = (id) => call('user_delete', { id });
-export const changePassword = (old, nw) => call('password', { old, new: nw });
+export async function changePassword(old, nw) {
+  const r = await call('password', { old, new: nw });
+  delete dbState.mustChange;
+  saveState();
+  return r;
+}
 export const getStatus = () => ({ ...status, pending: pendingCount() });
 export function onStatus(fn) { listeners.push(fn); }
 const receivers = [];
@@ -176,7 +182,7 @@ function schedule(ms = 1500) {
 export async function login(username, password) {
   const r = await call('login', { username, password });
   try { localStorage.setItem(TOKEN_KEY, r.token); } catch {}
-  dbState = { cursor: 0, user: r.user, hashes: {}, setup: true };
+  dbState = { cursor: 0, user: r.user, hashes: {}, setup: true, mustChange: !!r.mustChange };
   saveState();
   const me = await call('me');
   dbState.claude = !!me.claude;

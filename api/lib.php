@@ -78,6 +78,8 @@ function schema(): void {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   $pdo->exec("CREATE TABLE IF NOT EXISTS kk_counter (k VARCHAR(20) PRIMARY KEY, v BIGINT NOT NULL) ENGINE=InnoDB");
   $pdo->exec("INSERT IGNORE INTO kk_counter (k, v) VALUES ('rev', 0)");
+  // Tijdelijk wachtwoord: moet bij de eerste keer inloggen worden vervangen.
+  try { $pdo->exec('ALTER TABLE kk_users ADD COLUMN must_change TINYINT NOT NULL DEFAULT 0'); } catch (PDOException $e) { /* bestaat al */ }
 }
 
 // Wachtwoord controleren met vertraging en tijdelijke blokkade na te veel pogingen.
@@ -96,6 +98,12 @@ function checkPassword(string $username, string $password): ?array {
   }
   db()->prepare('UPDATE kk_users SET failed = 0, locked_until = NULL WHERE id = ?')->execute([$u['id']]);
   return $u;
+}
+
+// Eenvoudig te typen tijdelijk wachtwoord, bv. geur-4821-zon (≥ 10 tekens, willekeurig).
+function tempPassword(): string {
+  $words = ['zon', 'geur', 'roos', 'mint', 'vanille', 'ceder', 'lotus', 'amber', 'citrus', 'jasmijn', 'bries', 'zee'];
+  return $words[random_int(0, count($words) - 1)] . '-' . random_int(1000, 9999) . '-' . $words[random_int(0, count($words) - 1)];
 }
 
 function newToken(int $userId): string {
