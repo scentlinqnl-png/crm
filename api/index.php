@@ -30,6 +30,51 @@ try {
     out(['user' => $user['username'], 'admin' => (bool)$user['admin'], 'klanten' => $n, 'claude' => !empty(config()['anthropic_key'])]);
   }
 
+  // Eigen wachtwoord wijzigen.
+  if ($action === 'password') {
+    if (!checkPassword($user['username'], (string)($in['old'] ?? ''))) fail(403, 'Huidig wachtwoord klopt niet');
+    $new = (string)($in['new'] ?? '');
+    if (strlen($new) < 10) fail(400, 'Nieuw wachtwoord: minimaal 10 tekens');
+    db()->prepare('UPDATE kk_users SET pass_hash = ? WHERE id = ?')->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+    db()->prepare('DELETE FROM kk_tokens WHERE user_id = ? AND hash <> ?')->execute([$user['id'], hash('sha256', $_SERVER['HTTP_X_AUTH_TOKEN'])]);
+    out(['ok' => true]);
+  }
+
+  // Gebruikersbeheer (alleen beheerders).
+  if (in_array($action, ['users', 'user_add', 'user_update', 'user_delete'], true)) {
+    if (!$user['admin']) fail(403, 'Alleen voor beheerders');
+    if ($action === 'user_add') {
+      $name = trim((string)($in['username'] ?? ''));
+      $pass = (string)($in['password'] ?? '');
+      if (!preg_match('/^[A-Za-z0-9._@-]{2,80}$/', $name)) fail(400, 'Gebruikersnaam: 2–80 tekens, letters, cijfers en . _ @ -');
+      if (strlen($pass) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
+      $st = db()->prepare('SELECT COUNT(*) FROM kk_users WHERE username = ?');
+      $st->execute([$name]);
+      if ($st->fetchColumn()) fail(409, 'Die gebruikersnaam bestaat al');
+      db()->prepare('INSERT INTO kk_users (username, pass_hash, admin, created_at) VALUES (?, ?, ?, ?)')
+        ->execute([$name, password_hash($pass, PASSWORD_DEFAULT), empty($in['admin']) ? 0 : 1, date('Y-m-d H:i:s')]);
+    } elseif ($action === 'user_update') {
+      $id = (int)($in['id'] ?? 0);
+      if (isset($in['password'])) {
+        if (strlen((string)$in['password']) < 10) fail(400, 'Wachtwoord: minimaal 10 tekens');
+        db()->prepare('UPDATE kk_users SET pass_hash = ?, failed = 0, locked_until = NULL WHERE id = ?')->execute([password_hash((string)$in['password'], PASSWORD_DEFAULT), $id]);
+        db()->prepare('DELETE FROM kk_tokens WHERE user_id = ?')->execute([$id]);
+      }
+      if (isset($in['admin'])) {
+        if ($id === (int)$user['id'] && empty($in['admin'])) fail(400, 'Je kunt jezelf geen beheerder-af maken');
+        db()->prepare('UPDATE kk_users SET admin = ? WHERE id = ?')->execute([empty($in['admin']) ? 0 : 1, $id]);
+      }
+    } elseif ($action === 'user_delete') {
+      $id = (int)($in['id'] ?? 0);
+      if ($id === (int)$user['id']) fail(400, 'Je kunt jezelf niet verwijderen');
+      db()->prepare('DELETE FROM kk_tokens WHERE user_id = ?')->execute([$id]);
+      db()->prepare('DELETE FROM kk_users WHERE id = ?')->execute([$id]);
+    }
+    $rows = db()->query('SELECT id, username, admin, created_at, (SELECT MAX(last_used) FROM kk_tokens t WHERE t.user_id = u.id) AS last_seen FROM kk_users u ORDER BY username')->fetchAll();
+    foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['admin'] = (bool)$r['admin']; }
+    out(['users' => $rows, 'me' => (int)$user['id']]);
+  }
+
   if ($action === 'sync') {
     $cursor = max(0, (int)($in['cursor'] ?? 0));
     $changes = is_array($in['changes'] ?? null) ? $in['changes'] : [];

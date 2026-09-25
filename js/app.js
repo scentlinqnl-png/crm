@@ -7,6 +7,7 @@ import {
 import { planDay, mapsRouteUrl, mapsRouteUrls, planFromSelection } from './planner.js';
 import * as m365 from './graph.js';
 import * as db from './sync.js';
+import { initAssistant } from './assistant.js';
 import { importWorkbook, exportBackup, exportMyMaps, verbruikTSV, nextVerbruikRow, exportJsonBackup, restoreJsonBackup } from './excel.js';
 import { geocodePlaces, missingPlaces, distanceFromStart } from './geo.js';
 import { loadDemo } from './demo.js';
@@ -998,45 +999,148 @@ let persisted = null;
 navigator.storage?.persist?.().then((ok) => { persisted = ok; }).catch(() => {});
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
 
-function dbSection() {
-  if (!db.isSignedIn()) {
-    return `
-    <section class="card form">
-      <h2>Gedeelde database</h2>
-      <p class="muted small">Meld je aan om klanten, bezoeken, deals en service te delen met collega's via de server van deze app. Je kunt offline blijven werken; wijzigingen gaan mee zodra je weer online bent.</p>
-      <form id="dbLogin">
-        <label>Gebruikersnaam<input name="username" autocomplete="username" required></label>
+// ---------- aanmelden (de hele app zit achter een login) ----------
+
+// In de voorbeeldweergave en als los bestand is er geen server; daar geen login.
+const loginRequired = () => !window.KLANTKAART_DEMO && location.protocol !== 'file:';
+
+function viewLogin() {
+  return `
+    <section class="login-screen">
+      <img src="icons/icon.svg" alt="" width="64" height="64">
+      <h1>Klantkaart</h1>
+      <p class="muted">Scentlinq Pro Benelux · meld je aan om verder te gaan</p>
+      <form id="dbLogin" class="card form">
+        <label>Gebruikersnaam<input name="username" autocomplete="username" autocapitalize="none" required autofocus></label>
         <label>Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label>
-        <div class="actions left"><button class="btn primary">Aanmelden</button></div>
+        <div class="actions"><button class="btn primary">Aanmelden</button></div>
+        <p id="loginMsg" class="late small" role="alert"></p>
       </form>
     </section>`;
-  }
-  if (db.needsFirstSync()) {
-    return `
-    <section class="card">
-      <h2>Gedeelde database</h2>
-      <p>Aangemeld als <b>${h(db.user())}</b>. Wat moet er met de gegevens op dit apparaat gebeuren?</p>
-      <div class="actions left">
-        <button class="btn primary" id="dbReplace">Gegevens van de server gebruiken</button>
-        <button class="btn" id="dbMerge">Samenvoegen met de server</button>
-        <button class="btn ghost" id="dbLogout">Afmelden</button>
-      </div>
-      <p class="muted small"><b>Gegevens van de server gebruiken</b>: wat op dit apparaat staat wordt vervangen (maak eerst een back-up als je twijfelt). <b>Samenvoegen</b>: alles van dit apparaat gaat ook naar de server; bij hetzelfde klantnummer wint de server.</p>
+}
+viewLogin.after = () => {
+  $('#dbLogin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formData(e.target);
+    const btn = $('button', e.target);
+    btn.disabled = true;
+    $('#loginMsg').textContent = '';
+    try {
+      const me = await db.login(d.username.trim(), d.password);
+      resetClaudeClient();
+      const local = store.get().customers.length;
+      if (!local || !me.klanten) await db.firstSync(local ? 'merge' : 'replace');
+      render();
+    } catch (err) {
+      $('#loginMsg').textContent = navigator.onLine ? err.message : 'Je bent offline. Aanmelden kan alleen met internet.';
+      btn.disabled = false;
+    }
+  });
+};
+
+function viewFirstSync() {
+  return `
+    <section class="login-screen">
+      <h1>Welkom, ${h(db.user())}</h1>
+      <section class="card">
+        <p>Op dit apparaat staan al gegevens (${store.get().customers.length} klanten). Wat wil je daarmee doen?</p>
+        <div class="actions left">
+          <button class="btn primary" id="dbReplace">Gegevens van de server gebruiken</button>
+          <button class="btn" id="dbMerge">Samenvoegen met de server</button>
+        </div>
+        <p class="muted small"><b>Server gebruiken</b>: wat op dit apparaat staat wordt vervangen. <b>Samenvoegen</b>: alles van dit apparaat gaat ook naar de server; bij hetzelfde klantnummer wint de server.</p>
+        <div class="actions left"><button class="btn ghost" id="dbLogout">Afmelden</button></div>
+      </section>
     </section>`;
+}
+viewFirstSync.after = () => {
+  for (const [id, mode] of [['#dbReplace', 'replace'], ['#dbMerge', 'merge']]) {
+    $(id).addEventListener('click', async (e) => {
+      if (mode === 'replace' && !(await ask('De gegevens op dit apparaat vervangen door die van de server?', 'Vervangen'))) return;
+      e.target.disabled = true;
+      try {
+        await db.firstSync(mode);
+        toast(mode === 'replace' ? 'Gegevens van de server geladen' : 'Samengevoegd');
+      } catch (err) {
+        toast('Mislukt: ' + err.message, 5000);
+      }
+      render();
+    });
   }
+  $('#dbLogout').addEventListener('click', logoutNow);
+};
+
+async function logoutNow() {
+  const p = db.getStatus().pending;
+  if (p && !navigator.onLine && !(await ask(`Je bent offline en er wachten nog ${p} wijziging(en). Die blijven op dit apparaat staan tot de volgende keer dat iemand zich aanmeldt. Toch afmelden?`, 'Afmelden'))) return;
+  const r = await db.logout();
+  resetClaudeClient();
+  if (r.unsent) toast(`${r.unsent} wijziging(en) konden niet worden verstuurd en blijven op dit apparaat`, 5000);
+  location.hash = '#/vandaag';
+  render();
+}
+
+function dbSection() {
+  if (!db.isSignedIn()) return '';
   const st = db.getStatus();
   return `
     <section class="card">
-      <h2>Gedeelde database</h2>
-      <p>Aangemeld als <b>${h(db.user())}</b>. ${st.syncing ? 'Bezig met synchroniseren…' : st.lastSync ? `Laatst gesynchroniseerd om ${st.lastSync.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}.` : ''}
+      <h2>Account</h2>
+      <p>Aangemeld als <b>${h(db.user())}</b>${db.isAdmin() ? ' <span class="badge">beheerder</span>' : ''}. ${st.syncing ? 'Bezig met synchroniseren…' : st.lastSync ? `Laatst gesynchroniseerd om ${st.lastSync.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}.` : ''}
       ${st.pending ? `<br><span class="muted small">${st.pending} wijziging(en) wachten op verzending.</span>` : ''}
       ${st.error ? `<br><span class="late small">${h(st.error)}</span>` : ''}</p>
       <div class="actions left">
         <button class="btn primary" id="dbSync">⟳ Nu synchroniseren</button>
+        <button class="btn" id="dbPassword">Wachtwoord wijzigen</button>
         <button class="btn ghost" id="dbLogout">Afmelden</button>
       </div>
-      <p class="muted small">Foto's en handtekeningen blijven op dit apparaat en gaan niet mee.</p>
-    </section>`;
+      <p class="muted small">Alle gegevens staan in de gedeelde database en worden automatisch gesynchroniseerd. Bij afmelden worden ze van dit apparaat gewist. Foto's en handtekeningen blijven op het apparaat waar ze zijn gemaakt.</p>
+    </section>
+    ${db.isAdmin() ? '<section class="card" id="usersCard"><h2>Gebruikers</h2><p class="muted small">Laden…</p></section>' : ''}`;
+}
+
+async function loadUsers(data) {
+  const card = $('#usersCard');
+  if (!card) return;
+  try {
+    const r = data || await db.users();
+    card.innerHTML = `
+      <h2>Gebruikers</h2>
+      <ul class="list">${r.users.map((u) => `
+        <li class="user-row">
+          <div><b>${h(u.username)}</b>${u.admin ? ' <span class="badge">beheerder</span>' : ''}<br>
+          <span class="muted small">${u.last_seen ? 'Laatst actief ' + new Date(u.last_seen.replace(' ', 'T')).toLocaleDateString('nl-NL') : 'Nog niet aangemeld'}</span></div>
+          <div class="actions">
+            <button class="btn small" data-upass="${u.id}" data-uname="${h(u.username)}">Nieuw wachtwoord</button>
+            ${u.id === r.me ? '' : `<button class="btn small ghost" data-uadmin="${u.id}" data-val="${u.admin ? 0 : 1}">${u.admin ? 'Geen beheerder' : 'Maak beheerder'}</button>
+            <button class="btn small ghost danger" data-udel="${u.id}" data-uname="${h(u.username)}">Verwijderen</button>`}
+          </div>
+        </li>`).join('')}</ul>
+      <div class="actions left"><button class="btn primary" id="userAdd">+ Gebruiker toevoegen</button></div>`;
+    $('#userAdd').addEventListener('click', () => openDialog(`
+      <h2>Gebruiker toevoegen</h2>
+      <label>Gebruikersnaam<input name="username" required autocapitalize="none" autocomplete="off"></label>
+      <label>Wachtwoord (min. 10 tekens)<input name="password" type="password" minlength="10" required autocomplete="new-password"></label>
+      <label class="inline"><input type="checkbox" name="admin"> Beheerder (mag gebruikers beheren)</label>
+      <p class="muted small">Geef het wachtwoord persoonlijk door; de gebruiker kan het daarna zelf wijzigen.</p>
+      <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Toevoegen</button></div>`,
+      async (d) => { try { await loadUsers(await db.addUser(d.username.trim(), d.password, !!d.admin)); toast('Gebruiker toegevoegd'); } catch (e) { toast(e.message, 5000); } }));
+    $$('[data-upass]', card).forEach((b) => b.addEventListener('click', () => openDialog(`
+      <h2>Nieuw wachtwoord voor ${h(b.dataset.uname)}</h2>
+      <label>Wachtwoord (min. 10 tekens)<input name="password" type="password" minlength="10" required autocomplete="new-password"></label>
+      <p class="muted small">${h(b.dataset.uname)} wordt op alle apparaten afgemeld.</p>
+      <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Opslaan</button></div>`,
+      async (d) => { try { await loadUsers(await db.updateUser(Number(b.dataset.upass), { password: d.password })); toast('Wachtwoord gewijzigd'); } catch (e) { toast(e.message, 5000); } })));
+    $$('[data-uadmin]', card).forEach((b) => b.addEventListener('click', async () => {
+      try { await loadUsers(await db.updateUser(Number(b.dataset.uadmin), { admin: b.dataset.val === '1' })); } catch (e) { toast(e.message, 5000); }
+    }));
+    $$('[data-udel]', card).forEach((b) => b.addEventListener('click', async () => {
+      if (!(await ask(`Gebruiker ${b.dataset.uname} verwijderen? Die kan dan niet meer inloggen.`, 'Verwijderen'))) return;
+      try { await loadUsers(await db.deleteUser(Number(b.dataset.udel))); toast('Verwijderd'); } catch (e) { toast(e.message, 5000); }
+    }));
+  } catch (e) {
+    card.innerHTML = `<h2>Gebruikers</h2><p class="late small">${h(e.message)}</p>`;
+  }
 }
 
 function viewMeer() {
@@ -1182,45 +1286,15 @@ function viewMeer() {
     </section>`;
 }
 viewMeer.after = async () => {
-  $('#dbLogin')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const d = formData(e.target);
-    const btn = $('button', e.target);
-    btn.disabled = true;
-    try {
-      const me = await db.login(d.username.trim(), d.password);
-      resetClaudeClient();
-      const local = store.get().customers.length;
-      if (!local || !me.klanten) {
-        await db.firstSync(local ? 'merge' : 'replace');
-        toast(me.klanten ? `${me.klanten} klanten van de server geladen` : 'Aangemeld · gegevens van dit apparaat staan nu op de server');
-      } else toast('Aangemeld');
-    } catch (err) {
-      toast(err.message, 5000);
-    }
-    render();
-  });
-  for (const [id, mode] of [['#dbReplace', 'replace'], ['#dbMerge', 'merge']]) {
-    $(id)?.addEventListener('click', async (e) => {
-      if (mode === 'replace' && !(await ask('De gegevens op dit apparaat vervangen door die van de server?', 'Vervangen'))) return;
-      e.target.disabled = true;
-      try {
-        await db.firstSync(mode);
-        toast(mode === 'replace' ? 'Gegevens van de server geladen' : 'Samengevoegd');
-      } catch (err) {
-        toast('Mislukt: ' + err.message, 5000);
-      }
-      render();
-    });
-  }
   $('#dbSync')?.addEventListener('click', async () => { await dbSyncNow(); render(); });
-  $('#dbLogout')?.addEventListener('click', async () => {
-    const p = db.getStatus().pending;
-    if (p && !(await ask(`Er wachten nog ${p} wijziging(en) op verzending. Toch afmelden? Ze blijven op dit apparaat staan.`, 'Afmelden'))) return;
-    await db.logout();
-    resetClaudeClient();
-    render();
-  });
+  $('#dbLogout')?.addEventListener('click', logoutNow);
+  $('#dbPassword')?.addEventListener('click', () => openDialog(`
+    <h2>Wachtwoord wijzigen</h2>
+    <label>Huidig wachtwoord<input name="old" type="password" required autocomplete="current-password"></label>
+    <label>Nieuw wachtwoord (min. 10 tekens)<input name="nw" type="password" minlength="10" required autocomplete="new-password"></label>
+    <div class="actions"><button value="cancel" class="btn ghost" formnovalidate>Annuleren</button><button value="ok" class="btn primary">Wijzigen</button></div>`,
+    async (d) => { try { await db.changePassword(d.old, d.nw); toast('Wachtwoord gewijzigd'); } catch (e) { toast(e.message, 5000); } }));
+  loadUsers();
   $('#importFile').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -1549,7 +1623,9 @@ let lastRoute = '';
 function render() {
   const [path, query = ''] = (location.hash.slice(1) || '/vandaag').split('?');
   const params = new URLSearchParams(query);
-  const found = routes.find(([re]) => re.test(path)) || routes[0];
+  const gate = loginRequired() && (!db.isSignedIn() ? viewLogin : db.needsFirstSync() ? viewFirstSync : null);
+  document.body.classList.toggle('gated', !!gate);
+  const found = gate ? [/^/, gate, ''] : routes.find(([re]) => re.test(path)) || routes[0];
   const [re, fn, tab, usesParams] = found;
   const arg = usesParams ? params : path.match(re)?.[1];
   const scrollY = lastRoute === location.hash ? window.scrollY : 0;
@@ -1582,6 +1658,7 @@ hooks.render = render;
   }
 }
 hooks.sync = () => runSync({ quiet: true });
+initAssistant();
 db.onStatus(() => renderSyncChip());
 db.onReceive(renderIfIdle);
 db.start();

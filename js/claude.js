@@ -67,6 +67,7 @@ async function client() {
   return clientPromise;
 }
 export function resetClaudeClient() { clientPromise = null; }
+export const claudeClient = () => client();
 
 const SCHEMA = {
   type: 'object',

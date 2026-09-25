@@ -33,7 +33,7 @@ try {
       db()->prepare('INSERT INTO kk_users (username, pass_hash, admin, created_at) VALUES (?, ?, ?, ?)')
         ->execute([$new, password_hash($pass, PASSWORD_DEFAULT), $count === 0 || !empty($_POST['is_admin']) ? 1 : 0, date('Y-m-d H:i:s')]);
       $ok = true;
-      $msg = "Gebruiker “{$new}” aangemaakt. Meld je in de app aan via Meer › Gedeelde database.";
+      $msg = "Gebruiker “{$new}” aangemaakt. Je kunt nu inloggen in de app.";
       $count++;
     }
   }
@@ -47,7 +47,7 @@ $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES);
 <title>Klantkaart · inrichting</title>
 <style>body{font:16px system-ui,sans-serif;max-width:460px;margin:40px auto;padding:0 16px;background:#0d0d0f;color:#eee}input,button{font:inherit;width:100%;box-sizing:border-box;padding:10px;margin:4px 0 12px;border-radius:8px;border:1px solid #444;background:#1a1a1e;color:#eee}button{background:#c9a86a;color:#111;border:0;font-weight:600;cursor:pointer}.m{padding:10px;border-radius:8px;background:<?= $ok ? '#1e3a26' : '#3a1e1e' ?>}label{font-size:14px;color:#aaa}fieldset{border:1px solid #333;border-radius:8px;margin:0 0 12px}a{color:#c9a86a}</style>
 </head><body>
-<h1>Gedeelde database</h1>
+<h1>Klantkaart · gebruikers</h1>
 <?php if ($msg): ?><p class="m"><?= $e($msg) ?></p><?php endif; ?>
 <?php if (!isset($count)): ?>
 <?php elseif ($count === 0): ?>

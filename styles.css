@@ -409,3 +409,62 @@ canvas.sig { width: 100%; height: 150px; background: #fff; border-radius: 10px; 
 .meld-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
 body.melden { padding-bottom: 24px; padding-left: 0; }
 .chips-radio.big span { padding: 12px 16px; font-size: 1rem; }
+
+/* ---------- aanmelden ---------- */
+body.gated .tabbar, body.gated #syncBtn, body.gated .as-fab, body.gated .as-panel { display: none !important; }
+body.gated main { padding-bottom: 24px; }
+.login-screen { max-width: 420px; margin: 8vh auto 0; text-align: center; }
+.login-screen h1 { margin: 12px 0 4px; }
+.login-screen .card { text-align: left; }
+.login-screen .actions { justify-content: stretch; }
+.login-screen .actions .btn { flex: 1; }
+.user-row { flex-wrap: wrap; }
+.user-row .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------- zwevende assistent ---------- */
+.as-fab {
+  position: fixed; right: 16px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px); z-index: 40;
+  width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center;
+  background: var(--brand); color: var(--brand-ink);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  transition: transform .15s ease;
+}
+.as-fab:hover { transform: scale(1.06); }
+.as-fab:focus-visible { outline: 3px solid var(--brand-2); outline-offset: 3px; }
+body.as-open .as-fab { transform: rotate(45deg) scale(.9); }
+.as-panel {
+  position: fixed; z-index: 45; display: flex; flex-direction: column;
+  left: 0; right: 0; top: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  background: var(--surface); border: 1px solid var(--line);
+}
+.as-panel[hidden] { display: none; }
+@media (min-width: 700px) {
+  .as-panel {
+    left: auto; top: auto; right: 16px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 84px);
+    width: 420px; height: min(640px, calc(100vh - var(--tabbar-h) - 120px));
+    border-radius: var(--radius); box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  }
+}
+@media (max-width: 699px) { body.as-open .as-fab { display: none; } }
+.as-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.as-actions { display: flex; gap: 4px; }
+.as-log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.as-msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.as-msg p { margin: 0 0 6px; } .as-msg p:last-child { margin-bottom: 0; }
+.as-msg ul { margin: 4px 0 6px; padding-left: 18px; }
+.as-msg a { color: var(--brand); text-decoration: underline; }
+.as-msg.me { align-self: flex-end; background: var(--brand); color: var(--brand-ink); white-space: pre-wrap; border-bottom-right-radius: 4px; }
+.as-msg.bot { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+.as-action { align-self: flex-start; font-size: .85rem; color: var(--ok); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.as-status { align-self: flex-start; color: var(--muted); font-size: .9rem; display: flex; align-items: center; gap: 8px; }
+.as-dots { width: 18px; height: 6px; background: radial-gradient(circle, var(--muted) 2px, transparent 2.5px) 0 0 / 6px 6px repeat-x; animation: as-blink 1s steps(3) infinite; }
+@keyframes as-blink { from { width: 6px; } to { width: 24px; } }
+@media (prefers-reduced-motion: reduce) { .as-dots { animation: none; } .as-fab { transition: none; } }
+.as-empty { color: var(--text); }
+.as-empty p { margin: 0 0 10px; }
+.as-empty .chip { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+.as-empty .chip:hover { border-color: var(--brand); }
+.as-form { display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom) * 0); border-top: 1px solid var(--line); align-items: flex-end; }
+.as-form textarea { flex: 1; resize: none; min-height: 44px; max-height: 140px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+.as-form textarea:focus { outline: 2px solid var(--brand); outline-offset: 0; }

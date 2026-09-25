@@ -32,6 +32,14 @@ export const user = () => dbState.user;
 export const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } };
 // Heeft de server een Anthropic-sleutel? Dan werkt Claude zonder eigen sleutel.
 export const serverClaude = () => isSignedIn() && !!dbState.claude;
+export const isAdmin = () => isSignedIn() && !!dbState.admin;
+
+// Gebruikersbeheer en wachtwoord (api/index.php).
+export const users = () => call('users');
+export const addUser = (username, password, admin) => call('user_add', { username, password, admin });
+export const updateUser = (id, fields) => call('user_update', { id, ...fields });
+export const deleteUser = (id) => call('user_delete', { id });
+export const changePassword = (old, nw) => call('password', { old, new: nw });
 export const getStatus = () => ({ ...status, pending: pendingCount() });
 export function onStatus(fn) { listeners.push(fn); }
 const receivers = [];
@@ -172,19 +180,22 @@ export async function login(username, password) {
   saveState();
   const me = await call('me');
   dbState.claude = !!me.claude;
+  dbState.admin = !!me.admin;
   saveState();
   return me;
 }
 
+function clearLocalData() {
+  store.update((s) => {
+    for (const c of Object.keys(ARRAYS)) s[c] = [];
+    for (const c of MAPS) s[c] = {};
+    s.pinned = [];
+  });
+}
+
 // Na het aanmelden: gegevens van de server overnemen (lokaal vervangen) of samenvoegen.
 export async function firstSync(mode) {
-  if (mode === 'replace') {
-    store.update((s) => {
-      for (const c of Object.keys(ARRAYS)) s[c] = [];
-      for (const c of MAPS) s[c] = {};
-      s.pinned = [];
-    });
-  }
+  if (mode === 'replace') clearLocalData();
   await syncNow({ pullOnly: true, first: true }); // bij gelijke sleutel wint de server
   delete dbState.setup;
   saveState();
@@ -198,9 +209,16 @@ function signOutLocal() {
   emit();
 }
 
-export async function logout() {
+// Afmelden: eerst versturen wat nog openstaat, dan de klantgegevens van dit apparaat wissen
+// (de server heeft ze), zodat de volgende gebruiker opnieuw moet inloggen.
+export async function logout({ keepData = false } = {}) {
+  if (!dbState.setup) { try { await syncNow(); } catch {} }
+  // Niet-verzonden wijzigingen (bv. offline) nooit weggooien: dan blijven de gegevens staan.
+  const unsent = dbState.setup ? 0 : pendingCount();
   try { await call('logout'); } catch {}
   signOutLocal();
+  if (!keepData && !unsent) clearLocalData();
+  return { unsent };
 }
 
 // Automatisch: kort na elke wijziging, elke minuut, bij online komen en bij terugkeren naar de app.
