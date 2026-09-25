@@ -34,7 +34,7 @@ export function verbruikTSV(visits) {
     .join('\n');
 }
 
-async function download(name, blob) {
+export async function download(name, blob) {
   // Op claude.ai (voorbeeldweergave) lopen downloads via de pagina zelf.
   if (typeof window.claude?.use === 'function') {
     const dl = await window.claude.use('downloads').catch(() => null);
